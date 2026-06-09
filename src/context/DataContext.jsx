@@ -14,12 +14,12 @@ const INIT_FILTERS = {
   zone: '',
   agent: '',
   date: '',
-  onboardingType: '',
   storeType: '',
   readiness: '',
+  traffic: '',
+  qrInterest: '',
 };
 
-// Normalize a timestamp/date string to a short date key for grouping & filtering
 function toDateKey(s) {
   if (!s) return '';
   try {
@@ -30,14 +30,15 @@ function toDateKey(s) {
 }
 
 function applyFilters(raw, filters) {
-  const { zone, agent, date, onboardingType, storeType, readiness } = filters;
+  const { zone, agent, date, storeType, readiness, traffic, qrInterest } = filters;
   return {
     onboarding: raw.onboarding.filter(x =>
-      (!zone           || x['Assigned Zone'] === zone) &&
-      (!agent          || x['Field Agent Name'] === agent) &&
-      (!onboardingType || x['Who Are You Onboarding?'] === onboardingType) &&
-      (!storeType      || x['Type of Store'] === storeType) &&
-      (!readiness      || x['Merchant Readiness Level'] === readiness)
+      (!zone       || x['Assigned Zone'] === zone) &&
+      (!agent      || x['Field Agent Name'] === agent) &&
+      (!storeType  || x['Type of Store'] === storeType) &&
+      (!readiness  || x['Merchant Readiness Level'] === readiness) &&
+      (!traffic    || x['Estimated Daily Customer Traffic'] === traffic) &&
+      (!qrInterest || x['Is Merchant Interested In QR Activation?'] === qrInterest)
     ),
     daily: raw.daily.filter(x =>
       (!zone  || x['Assigned Zone'] === zone) &&
@@ -57,13 +58,64 @@ function buildFilterOptions(raw) {
       ...raw.onboarding.map(r => r['Field Agent Name']),
       ...raw.daily.map(r => r['Agent Name']),
     ]),
-    dates: uniq(
-      raw.daily.map(r => toDateKey(r['Date'] || r['Timestamp'])).filter(Boolean)
-    ).sort(),
-    onboardingTypes: uniq(raw.onboarding.map(r => r['Who Are You Onboarding?'])),
+    dates: uniq(raw.daily.map(r => toDateKey(r['Date'] || r['Timestamp'])).filter(Boolean)).sort(),
     storeTypes: uniq(raw.onboarding.map(r => r['Type of Store'])),
     readiness: uniq(raw.onboarding.map(r => r['Merchant Readiness Level'])),
+    trafficBands: uniq(raw.onboarding.map(r => r['Estimated Daily Customer Traffic'])),
+    qrInterest: uniq(raw.onboarding.map(r => r['Is Merchant Interested In QR Activation?'])),
   };
+}
+
+function sanitizeRows(rows) {
+  return rows
+    .filter((row) => {
+      if (!row || typeof row !== 'object') return false;
+      return Object.values(row).some((value) => String(value || '').trim() !== '');
+    })
+    .map(normalizeRowValues);
+}
+
+function normalizeRowValues(row) {
+  const normalized = { ...row };
+  const aliasMaps = {
+    'Field Agent Name': {
+      'Chilee Nwaiwu': 'Chilee nwaiwu',
+      'Chile Nwaiwu': 'Chilee nwaiwu',
+      'Chilee nwaiwu': 'Chilee nwaiwu',
+    },
+    'Agent Name': {
+      'Chilee Nwaiwu': 'Chilee nwaiwu',
+      'Chile Nwaiwu': 'Chilee nwaiwu',
+      'Chilee nwaiwu': 'Chilee nwaiwu',
+    },
+  };
+  const titleCaseKeys = [
+    'Who Are You Onboarding?',
+    'Merchant Readiness Level',
+    'Is Merchant Interested In QR Activation?',
+    'Existing Financing Providers In Store',
+  ];
+
+  titleCaseKeys.forEach((key) => {
+    if (normalized[key]) normalized[key] = toTitleCase(normalized[key]);
+  });
+
+  Object.entries(aliasMaps).forEach(([key, map]) => {
+    if (!normalized[key]) return;
+    const value = toTitleCase(normalized[key]);
+    normalized[key] = map[value] || normalized[key].trim();
+  });
+
+  return normalized;
+}
+
+function toTitleCase(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
 }
 
 export function DataProvider({ children }) {
@@ -72,8 +124,8 @@ export function DataProvider({ children }) {
   const [filtered, setFiltered] = useState(applyFilters(INIT_RAW, INIT_FILTERS));
   const [filterOptions, setFilterOptions] = useState(buildFilterOptions(INIT_RAW));
   const [status, setStatus] = useState({
-    type: 'ok',
-    message: '✓ Loaded with cached data — click Refresh to fetch live from Google Sheets',
+    type: 'loading',
+    message: 'Connecting to live Google Sheets data...',
   });
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
@@ -98,6 +150,7 @@ export function DataProvider({ children }) {
   }, []);
 
   const refresh = useCallback(async (silent = false) => {
+    silent = silent === true;
     if (!silent) setIsRefreshing(true);
     if (!silent) setStatus({ type: 'loading', message: 'Fetching live data from Google Sheets...' });
     try {
@@ -106,44 +159,47 @@ export function DataProvider({ children }) {
       const urls = import.meta.env.PROD
         ? {
             onboarding: '/.netlify/functions/sheets?source=onboarding',
-            daily:      '/.netlify/functions/sheets?source=daily',
+            daily: '/.netlify/functions/sheets?source=daily',
           }
         : SHEET_URLS;
 
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 10000);
-      const [r1, r2] = await Promise.all([
+      const [onboardingResponse, dailyResponse] = await Promise.all([
         fetch(urls.onboarding, { signal: ctrl.signal }),
-        fetch(urls.daily,      { signal: ctrl.signal }),
+        fetch(urls.daily, { signal: ctrl.signal }),
       ]);
       clearTimeout(timer);
-      if (!r1.ok || !r2.ok) throw new Error('Sheet returned ' + (!r1.ok ? r1.status : r2.status));
-      const [t1, t2] = await Promise.all([r1.text(), r2.text()]);
+      if (!onboardingResponse.ok || !dailyResponse.ok) {
+        throw new Error(`Sheet returned ${!onboardingResponse.ok ? onboardingResponse.status : dailyResponse.status}`);
+      }
+      const [onboardingText, dailyText] = await Promise.all([
+        onboardingResponse.text(),
+        dailyResponse.text(),
+      ]);
       const parseOpts = {
         header: true,
         skipEmptyLines: true,
         transformHeader: h => h.trim().replace(/\s+/g, ' '),
         transform: v => typeof v === 'string' ? v.trim() : v,
       };
-      const p1 = Papa.parse(t1, parseOpts).data;
-      const p2 = Papa.parse(t2, parseOpts).data;
+      const p1 = sanitizeRows(Papa.parse(onboardingText, parseOpts).data);
+      const p2 = sanitizeRows(Papa.parse(dailyText, parseOpts).data);
       const newRaw = {
-        onboarding: p1.length ? p1 : raw.onboarding,
-        daily:      p2.length ? p2 : raw.daily,
+        onboarding: p1,
+        daily: p2,
       };
-      // Detect new rows and which agents submitted new reports
-      const prevDailyCount = raw.daily.length;
+      // Detect new acquisition rows and which agents added them
       const prevOnbCount   = raw.onboarding.length;
-      const prevAgents = new Set(raw.daily.map(r => r['Agent Name']));
-      const newAgents  = newRaw.daily
-        .filter(r => !prevAgents.has(r['Agent Name']) || newRaw.daily.length > prevDailyCount)
-        .map(r => r['Agent Name'])
+      const prevAgents = new Set(raw.onboarding.map(r => r['Field Agent Name']));
+      const newAgents  = newRaw.onboarding
+        .filter(r => !prevAgents.has(r['Field Agent Name']) || newRaw.onboarding.length > prevOnbCount)
+        .map(r => r['Field Agent Name'])
         .filter((v, i, a) => a.indexOf(v) === i);
 
-      const dailyDelta = Math.max(0, newRaw.daily.length - prevDailyCount);
       const onbDelta   = Math.max(0, newRaw.onboarding.length - prevOnbCount);
-      if (dailyDelta > 0 || onbDelta > 0) {
-        setNewRowDelta({ daily: dailyDelta, onboarding: onbDelta, agents: newAgents });
+      if (onbDelta > 0) {
+        setNewRowDelta({ daily: 0, onboarding: onbDelta, agents: newAgents });
       }
 
       setRaw(newRaw);
@@ -152,7 +208,7 @@ export function DataProvider({ children }) {
       if (!silent) {
         setStatus({
           type: 'ok',
-          message: `✓ Live — ${newRaw.onboarding.length} onboarding + ${newRaw.daily.length} daily — synced at ${now.toLocaleTimeString()}`,
+          message: `✓ Live acquisition sheet — ${newRaw.onboarding.length} records synced at ${now.toLocaleTimeString()}`,
         });
       }
     } catch (e) {
@@ -172,9 +228,9 @@ export function DataProvider({ children }) {
     return () => clearTimeout(t);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Silent auto-poll every 60s
+  // Silent auto-poll every 2 minutes
   useEffect(() => {
-    const interval = setInterval(() => refresh(true), 60000);
+    const interval = setInterval(() => refresh(true), 120000);
     return () => clearInterval(interval);
   }, [refresh]);
 

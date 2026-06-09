@@ -1,12 +1,13 @@
 import { useData } from '../../context/DataContext';
 
 const SOURCE_HINT = {
-  zone:           'Applies to both Onboarding DB and Daily DB',
-  agent:          'Applies to both Onboarding DB and Daily DB',
-  date:           'Filters Daily Report DB by submission date',
-  onboardingType: 'Filters Onboarding DB — Merchant, GP, or Agent',
-  storeType:      'Filters Onboarding DB by store category',
-  readiness:      'Filters Onboarding DB by merchant readiness level',
+  zone:       'Filters both acquisition and daily report sheets by assigned zone',
+  agent:      'Filters both acquisition and daily report sheets by agent name',
+  date:       'Filters the daily agent report sheet by report date',
+  storeType:  'Filters the live acquisition sheet by store category',
+  readiness:  'Filters the live acquisition sheet by merchant readiness level',
+  traffic:    'Filters the live acquisition sheet by estimated customer traffic',
+  qrInterest: 'Filters the live acquisition sheet by QR activation interest',
 };
 
 export default function ControlBar() {
@@ -22,19 +23,14 @@ export default function ControlBar() {
       + ' ' + lastUpdated.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
     : new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 
-  // Show filtered/total only when a filter is active
   const onbFiltered  = filtered.onboarding.length;
   const onbTotal     = raw.onboarding.length;
-  const dailyFiltered = filtered.daily.length;
-  const dailyTotal    = raw.daily.length;
   const isFiltered    = activeCount > 0;
 
   return (
     <div className="ctrl">
-
-      {/* Group 1 — cross-DB filters */}
       <div className="flt-group">
-        <span className="flt-group-lbl">Both DBs</span>
+        <span className="flt-group-lbl">Shared Filters</span>
         <FilterSelect
           label="Zone"  options={filterOptions.zones}
           value={filters.zone}  onChange={v => setFilter('zone', v)}
@@ -45,58 +41,50 @@ export default function ControlBar() {
           value={filters.agent} onChange={v => setFilter('agent', v)}
           hint={SOURCE_HINT.agent}
         />
-      </div>
-
-      <div className="flt-sep" />
-
-      {/* Group 2 — Daily DB filter */}
-      <div className="flt-group">
-        <span className="flt-group-lbl">Daily DB</span>
         <FilterSelect
-          label="Report Date" options={filterOptions.dates}
-          value={filters.date}  onChange={v => setFilter('date', v)}
+          label="Report Date" options={filterOptions.dates || []}
+          value={filters.date} onChange={v => setFilter('date', v)}
           hint={SOURCE_HINT.date}
         />
       </div>
 
       <div className="flt-sep" />
 
-      {/* Group 3 — Onboarding DB filters */}
       <div className="flt-group">
-        <span className="flt-group-lbl">Onboarding DB</span>
-        <FilterSelect
-          label="Type"       options={filterOptions.onboardingTypes}
-          value={filters.onboardingType} onChange={v => setFilter('onboardingType', v)}
-          hint={SOURCE_HINT.onboardingType}
-        />
+        <span className="flt-group-lbl">Merchant Acquisition Sheet</span>
         <FilterSelect
           label="Store Type" options={filterOptions.storeTypes}
-          value={filters.storeType}      onChange={v => setFilter('storeType', v)}
+          value={filters.storeType} onChange={v => setFilter('storeType', v)}
           hint={SOURCE_HINT.storeType}
         />
         <FilterSelect
           label="Readiness"  options={filterOptions.readiness}
-          value={filters.readiness}      onChange={v => setFilter('readiness', v)}
+          value={filters.readiness} onChange={v => setFilter('readiness', v)}
           hint={SOURCE_HINT.readiness}
+        />
+        <FilterSelect
+          label="Traffic" options={filterOptions.trafficBands}
+          value={filters.traffic} onChange={v => setFilter('traffic', v)}
+          hint={SOURCE_HINT.traffic}
+        />
+        <FilterSelect
+          label="QR Interest" options={filterOptions.qrInterest}
+          value={filters.qrInterest} onChange={v => setFilter('qrInterest', v)}
+          hint={SOURCE_HINT.qrInterest}
         />
       </div>
 
-      {/* Clear button */}
       {activeCount > 0 && (
         <button className="clear-btn" onClick={clearAllFilters}>
           ✕ Clear {activeCount} filter{activeCount !== 1 ? 's' : ''}
         </button>
       )}
 
-      {/* Right side */}
       <div className="ctrl-r">
         {isFiltered && (
           <span className="rec-count">
             <span className="rec-dot onb" />
-            {onbFiltered}/{onbTotal} onboarding
-            <span className="rec-divider">·</span>
-            <span className="rec-dot daily" />
-            {dailyFiltered}/{dailyTotal} daily
+            {onbFiltered}/{onbTotal} acquisition record{onbTotal !== 1 ? 's' : ''}
           </span>
         )}
         <span className="date-lbl">{dateLbl}</span>

@@ -7,12 +7,12 @@ const PAGES = [
     icon: 'M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z',
   },
   {
-    id: 'fieldops', label: 'Daily Report', short: 'Daily',
-    icon: 'M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zM6 20V4h7v5h5v11H6z',
+    id: 'merchants', label: 'Acquisitions', short: 'Acquire',
+    icon: 'M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z',
   },
   {
-    id: 'merchants', label: 'Network', short: 'Network',
-    icon: 'M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z',
+    id: 'fieldops', label: 'Daily Reports', short: 'Daily',
+    icon: 'M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zM6 20V4h7v5h5v11H6z',
   },
   {
     id: 'agents', label: 'Agents', short: 'Agents',
@@ -21,10 +21,6 @@ const PAGES = [
   {
     id: 'insights', label: 'Insights', short: 'Insights',
     icon: 'M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z',
-  },
-  {
-    id: 'escalations', label: '🚨 Escalations', short: 'Alert',
-    icon: 'M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z',
   },
 ];
 
@@ -38,8 +34,8 @@ export default function Nav({ activePage, onPageChange, badges = {} }) {
       <nav className="nav">
         <img src="/logo.svg" alt="STEP Network" className="nav-logo" />
         <div className="nav-brand">
-          <span className="nav-brand-title">STEP Live Updates</span>
-          <span className="nav-brand-sub">Dashboard</span>
+          <span className="nav-brand-title">STEP Merchant Acquisition</span>
+          <span className="nav-brand-sub">Live Dashboard</span>
         </div>
         <div className="nav-sep" />
         <div className="tabs">
@@ -62,7 +58,7 @@ export default function Nav({ activePage, onPageChange, badges = {} }) {
         <div className="nav-r">
           <div className="live-pill">
             <div className="dot" />
-            <span className="live-pill-text">2 Sources</span>
+            <span className="live-pill-text">2 Live Sheets</span>
           </div>
           {user && (
             <span className="nav-user" title={user.email}>
@@ -71,7 +67,7 @@ export default function Nav({ activePage, onPageChange, badges = {} }) {
           )}
           <button
             className={`ref-btn${isRefreshing ? ' spin' : ''}`}
-            onClick={refresh}
+            onClick={() => refresh()}
             disabled={isRefreshing}
           >
             <svg viewBox="0 0 24 24">
