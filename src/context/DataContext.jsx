@@ -81,12 +81,20 @@ function normalizeRowValues(row) {
     'Field Agent Name': {
       'Chilee Nwaiwu': 'Chilee nwaiwu',
       'Chile Nwaiwu': 'Chilee nwaiwu',
+      'Chile Nwaiwu91k': 'Chilee nwaiwu',
       'Chilee nwaiwu': 'Chilee nwaiwu',
     },
     'Agent Name': {
       'Chilee Nwaiwu': 'Chilee nwaiwu',
       'Chile Nwaiwu': 'Chilee nwaiwu',
+      'Chile Nwaiwu91k': 'Chilee nwaiwu',
       'Chilee nwaiwu': 'Chilee nwaiwu',
+    },
+    'Assigned Zone': {
+      'Unilag/akoka': 'UNILAG',
+      'Unilag': 'UNILAG',
+      'Computer Village': 'Computer Village',
+      'Surulere/lawanson': 'Surulere/Lawanson',
     },
   };
   const titleCaseKeys = [

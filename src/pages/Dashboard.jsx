@@ -4,6 +4,7 @@ import ControlBar from '../components/layout/ControlBar';
 import StatusBar from '../components/layout/StatusBar';
 import Overview from './Overview';
 import Merchants from './Merchants';
+import StoreCapture from './StoreCapture';
 import FieldOps from './FieldOps';
 import Agents from './Agents';
 import Insights from './Insights';
@@ -103,10 +104,12 @@ export default function Dashboard() {
     setShowWelcome(false);
   };
 
+  const isCapturePage = activePage === 'storecapture';
+
   return (
     <>
       <Nav activePage={activePage} onPageChange={handlePageChange} />
-      <ControlBar />
+      {!isCapturePage && <ControlBar />}
       <StatusBar />
       {showWelcome && (
         <WelcomeBanner user={user} onGoAcquisitions={goAcquisitions} onDismiss={() => setShowWelcome(false)} />
@@ -114,6 +117,7 @@ export default function Dashboard() {
       <div className="canvas">
         {activePage === 'overview'    && <Overview />}
         {activePage === 'merchants'   && <Merchants />}
+        {activePage === 'storecapture' && <StoreCapture />}
         {activePage === 'fieldops'    && <FieldOps />}
         {activePage === 'agents'      && <Agents />}
         {activePage === 'insights'    && <Insights />}
