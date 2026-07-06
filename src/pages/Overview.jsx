@@ -36,8 +36,12 @@ const donutOpts = {
 };
 
 export default function Overview() {
-  const { filtered } = useData();
+  const { filtered, raw, meta } = useData();
   const O = filtered.onboarding;
+  const devfinRows = raw.devfin || [];
+  const devproRows = raw.devpro || [];
+  const devfinSummary = meta?.devfinSummary;
+  const devproSummary = meta?.devproSummary;
 
   const total = O.length;
   const zones = uniq(O.map((r) => r['Assigned Zone']));
@@ -55,6 +59,8 @@ export default function Overview() {
 
   const topZone = getTopEntry(zoneMap);
   const topAgent = getTopEntry(agentMap);
+  const devfinMetrics = buildSalesOverview(devfinRows);
+  const devproMetrics = buildSalesOverview(devproRows);
 
   return (
     <div>
@@ -174,7 +180,44 @@ export default function Overview() {
         </div>
       </div>
 
-      <div className="footer">Overview &bull; Merchant acquisition dashboard &bull; Live onboarding sheet only</div>
+      <div className="sec">Live sales snapshots — exact amounts from the Devfin and Devpro sheets</div>
+
+      <div className="r g4">
+        <Scorecard
+          source="Live Sheet"
+          colorClass="pu"
+          label="Exact Devfin Amount"
+          value={formatMoney(devfinSummary?.totalBookedValue ?? devfinMetrics.totalBookedValue)}
+          sub="Pulled from the Devfin total row on the live sheet"
+          subType="up"
+        />
+        <Scorecard
+          source="Live Sheet"
+          colorClass="gr"
+          label="Devfin Stores"
+          value={devfinMetrics.storeCount}
+          sub={devfinMetrics.topProduct ? `Product label present: ${devfinMetrics.topProduct.label}` : 'No Devfin activity yet'}
+          subType="up"
+        />
+        <Scorecard
+          source="Live Sheet"
+          colorClass="te"
+          label="Exact Devpro Value"
+          value={formatMoney(devproSummary?.totalBookedValue ?? devproMetrics.totalBookedValue)}
+          sub="Pulled from the Devpro total row on the live sheet"
+          subType="up"
+        />
+        <Scorecard
+          source="Live Sheet"
+          colorClass="am"
+          label="Devpro Rows"
+          value={devproMetrics.rowCount}
+          sub={devproMetrics.latestSale ? `Latest Devpro sale: ${devproMetrics.latestSale}` : 'No Devpro rows synced yet'}
+          subType="up"
+        />
+      </div>
+
+      <div className="footer">Overview &bull; Merchant acquisition plus Devfin and Devpro snapshots &bull; Live onboarding and sales sheets</div>
     </div>
   );
 }
@@ -210,4 +253,78 @@ function getTopEntry(map) {
   return Object.entries(map).reduce((best, [key, value]) => (
     value > best.value ? { key, value } : best
   ), { key: '', value: 0 });
+}
+
+function buildSalesOverview(rows) {
+  const productMap = new Map();
+  const locationMap = new Map();
+  const storeSet = new Set();
+  let totalBookedValue = 0;
+  let latestSale = '';
+
+  rows.forEach((row) => {
+    const product = row['Product Type'] || 'Unspecified Product';
+    const location = row['Store Location'] || 'Unspecified Location';
+    const store = row['Store Name'] || 'Unnamed Store';
+    const bookedValue = parseMoney(row['Device Price'] || row.Value);
+
+    totalBookedValue += bookedValue;
+    productMap.set(product, (productMap.get(product) || 0) + bookedValue);
+    locationMap.set(location, (locationMap.get(location) || 0) + 1);
+    storeSet.add(store);
+    latestSale = getLaterTimestamp(latestSale, row.Timestamp);
+  });
+
+  const topProduct = getTopLabel(Array.from(productMap.entries()));
+  const topLocation = getTopLabel(Array.from(locationMap.entries()));
+
+  return {
+    totalBookedValue,
+    storeCount: storeSet.size,
+    locationCount: locationMap.size,
+    rowCount: rows.length,
+    topProduct,
+    topLocation,
+    latestSale: latestSale ? formatSalesTimestamp(latestSale) : '',
+  };
+}
+
+function getTopLabel(entries) {
+  if (!entries.length) return null;
+  const [label, value] = entries.sort((a, b) => b[1] - a[1])[0];
+  return { label, value };
+}
+
+function parseMoney(value) {
+  const cleaned = String(value || '').replace(/[^0-9.-]/g, '');
+  const amount = Number(cleaned);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+function formatMoney(value) {
+  return new Intl.NumberFormat('en-NG', {
+    style: 'currency',
+    currency: 'NGN',
+    maximumFractionDigits: 0,
+  }).format(value || 0);
+}
+
+function getLaterTimestamp(currentValue, nextValue) {
+  const currentDate = new Date(currentValue);
+  const nextDate = new Date(nextValue);
+
+  if (Number.isNaN(nextDate.getTime())) return currentValue;
+  if (Number.isNaN(currentDate.getTime()) || nextDate > currentDate) return nextValue;
+  return currentValue;
+}
+
+function formatSalesTimestamp(value) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+
+  return parsed.toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
 }

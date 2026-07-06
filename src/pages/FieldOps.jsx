@@ -8,18 +8,18 @@ const GRID = 'rgba(0,0,0,0.05)';
 const baseOpts = { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } };
 
 export default function FieldOps() {
-  const { filtered } = useData();
+  const { filtered, filters } = useData();
   const D = filtered.daily;
 
   const visits = sumField(D, 'Total Merchants Visited Today');
   const blocked = sumField(D, "Interested Merchants But Couldn't Enroll");
   const enrolled = D.reduce((sum, row) => sum + getEnrolledCount(row), 0);
-  const fallbackEnrolled = Math.max(0, visits - blocked);
-  const effectiveEnrolled = enrolled > 0 ? enrolled : fallbackEnrolled;
   const blockRate = visits > 0 ? Math.round((blocked / visits) * 100) : 0;
+  const conversionRate = visits > 0 ? Math.round((enrolled / visits) * 100) : 0;
   const agents = uniq(D.map((row) => row['Agent Name']));
   const zones = uniq(D.map((row) => row['Assigned Zone']));
   const feedbackCount = D.filter((row) => row['Overall Field Experience Feedbacks/Recommendations']).length;
+  const activeDateLabel = filters.date || 'all submission dates';
 
   const agentVisitData = {
     labels: agents.length ? agents : ['No data'],
@@ -72,11 +72,11 @@ export default function FieldOps() {
       <div className="src-banner">
         <div className="src-banner-item">
           <span className="src-dot" style={{ background: 'var(--green)' }} />
-          <span><span className="src-banner-label">Daily Agent Report Sheet</span> Live merchant visit reports submitted by agents</span>
+          <span><span className="src-banner-label">Daily Agent Report Sheet</span> Live merchant visit reports submitted by agents on {activeDateLabel}</span>
         </div>
       </div>
 
-      <div className="sec">Daily agent reports — what agents recorded in the field</div>
+      <div className="sec">Daily agent reports — {filters.date ? `${filters.date} submissions` : 'what agents recorded in the field'}</div>
 
       <div className="r g5">
         <Scorecard
@@ -99,8 +99,8 @@ export default function FieldOps() {
           source="Daily Sheet"
           colorClass="gr"
           label="Enrolled Merchants"
-          value={effectiveEnrolled}
-          sub={visits > 0 ? `${Math.max(0, 100 - blockRate)}% field conversion` : 'No conversions reported yet'}
+          value={enrolled}
+          sub={visits > 0 ? `${conversionRate}% field conversion` : 'No conversions reported yet'}
           subType="up"
         />
         <Scorecard
@@ -170,7 +170,12 @@ export default function FieldOps() {
                 const rowBlockRate = visitCount > 0 ? Math.round((blockedCount / visitCount) * 100) : 0;
                 return (
                   <tr key={index}>
-                    <td>{formatDate(row['Date'] || row['Timestamp'])}</td>
+                    <td>
+                      <div style={{ fontWeight: 600 }}>{formatDate(row['Timestamp'])}</div>
+                      <div style={{ fontSize: '10px', color: 'var(--muted)', marginTop: 2 }}>
+                        Field date: {getFieldDateLabel(row['Date'])}
+                      </div>
+                    </td>
                     <td><b>{row['Agent Name'] || '—'}</b></td>
                     <td>{row['Assigned Zone'] || '—'}</td>
                     <td>{visitCount}</td>
@@ -195,17 +200,28 @@ export default function FieldOps() {
         </div>
       </div>
 
-      <div className="footer">Daily Reports &bull; Agent field report sheet &bull; Live source aligned</div>
+      <div className="footer">Daily Reports &bull; Submission-date driven &bull; Live source aligned</div>
     </div>
   );
 }
 
 function getEnrolledCount(row) {
-  const explicit = parseFloat(row['Enrolled Merchant']);
-  if (!Number.isNaN(explicit)) return explicit;
-  return 0;
+  const raw = String(row['Enrolled Merchant'] || '').trim();
+  const explicit = parseFloat(raw);
+  if (raw && !Number.isNaN(explicit) && /^\d+(\.\d+)?$/.test(raw)) return explicit;
+  if (raw) return 1;
+
+  const visits = parseFloat(row['Total Merchants Visited Today']) || 0;
+  const blocked = parseFloat(row["Interested Merchants But Couldn't Enroll"]) || 0;
+  return Math.max(0, visits - blocked);
 }
 
 function countRowsWithKeywords(items, keywords) {
   return items.filter((text) => keywords.some((keyword) => text.includes(keyword))).length;
+}
+
+function getFieldDateLabel(value) {
+  const text = String(value || '').trim();
+  if (!text) return '—';
+  return text.split(' ')[0];
 }

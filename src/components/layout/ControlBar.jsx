@@ -3,7 +3,7 @@ import { useData } from '../../context/DataContext';
 const SOURCE_HINT = {
   zone:       'Filters both acquisition and daily report sheets by assigned zone',
   agent:      'Filters both acquisition and daily report sheets by agent name',
-  date:       'Filters the daily agent report sheet by report date',
+  date:       'Filters the daily agent report sheet by submission date',
   storeType:  'Filters the live acquisition sheet by store category',
   readiness:  'Filters the live acquisition sheet by merchant readiness level',
   traffic:    'Filters the live acquisition sheet by estimated customer traffic',
@@ -42,7 +42,7 @@ export default function ControlBar() {
           hint={SOURCE_HINT.agent}
         />
         <FilterSelect
-          label="Report Date" options={filterOptions.dates || []}
+          label="Submission Date" options={filterOptions.dates || []}
           value={filters.date} onChange={v => setFilter('date', v)}
           hint={SOURCE_HINT.date}
         />

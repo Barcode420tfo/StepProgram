@@ -8,6 +8,13 @@ const DataContext = createContext(null);
 const INIT_RAW = {
   onboarding: [...FALLBACK.onboarding],
   daily: [...FALLBACK.daily],
+  devfin: [...(FALLBACK.devfin || [])],
+  devpro: [...(FALLBACK.devpro || [])],
+};
+
+const INIT_META = {
+  devfinSummary: null,
+  devproSummary: null,
 };
 
 const INIT_FILTERS = {
@@ -29,6 +36,10 @@ function toDateKey(s) {
   } catch { return s; }
 }
 
+function getDailySubmissionDateKey(row) {
+  return toDateKey(row?.Timestamp || row?.Date);
+}
+
 function applyFilters(raw, filters) {
   const { zone, agent, date, storeType, readiness, traffic, qrInterest } = filters;
   return {
@@ -43,8 +54,10 @@ function applyFilters(raw, filters) {
     daily: raw.daily.filter(x =>
       (!zone  || x['Assigned Zone'] === zone) &&
       (!agent || x['Agent Name'] === agent) &&
-      (!date  || toDateKey(x['Date'] || x['Timestamp']) === date)
+      (!date  || getDailySubmissionDateKey(x) === date)
     ),
+    devfin: raw.devfin,
+    devpro: raw.devpro,
   };
 }
 
@@ -58,7 +71,7 @@ function buildFilterOptions(raw) {
       ...raw.onboarding.map(r => r['Field Agent Name']),
       ...raw.daily.map(r => r['Agent Name']),
     ]),
-    dates: uniq(raw.daily.map(r => toDateKey(r['Date'] || r['Timestamp'])).filter(Boolean)).sort(),
+    dates: uniq(raw.daily.map(r => getDailySubmissionDateKey(r)).filter(Boolean)).sort(),
     storeTypes: uniq(raw.onboarding.map(r => r['Type of Store'])),
     readiness: uniq(raw.onboarding.map(r => r['Merchant Readiness Level'])),
     trafficBands: uniq(raw.onboarding.map(r => r['Estimated Daily Customer Traffic'])),
@@ -66,13 +79,13 @@ function buildFilterOptions(raw) {
   };
 }
 
-function sanitizeRows(rows) {
+function sanitizeRows(rows, normalizeRow = normalizeRowValues) {
   return rows
     .filter((row) => {
       if (!row || typeof row !== 'object') return false;
       return Object.values(row).some((value) => String(value || '').trim() !== '');
     })
-    .map(normalizeRowValues);
+    .map(normalizeRow);
 }
 
 function normalizeRowValues(row) {
@@ -117,6 +130,85 @@ function normalizeRowValues(row) {
   return normalized;
 }
 
+function normalizePerformanceRowValues(row) {
+  const normalized = { ...row };
+  const preferredStoreName = String(normalized['Store Name_1'] || normalized['Store Name'] || '').trim();
+  const preferredLocation = String(normalized['Store Location'] || normalized['Location'] || '').trim();
+  const preferredDeviceType = String(normalized['Device Type_1'] || normalized['Device Type'] || '').trim();
+  const preferredDeviceModel = String(normalized['Device Model_1'] || normalized['Device Model'] || '').trim();
+  const preferredAgentName = String(normalized['Agent Name_1'] || normalized['Agent Name'] || '').trim();
+
+  normalized['Store Name'] = preferredStoreName;
+  normalized['Store Location'] = toTitleCase(preferredLocation);
+  normalized['Device Type'] = preferredDeviceType;
+  normalized['Device Model'] = preferredDeviceModel;
+  normalized['Agent Name'] = preferredAgentName;
+  normalized['Product Type'] = String(normalized['Product Type'] || '').trim();
+  normalized['Type Of DevPro'] = String(normalized['Type Of DevPro'] || '').trim();
+
+  return normalized;
+}
+
+function normalizePerformanceCsvHeaders(csvText) {
+  const lines = String(csvText || '').split(/\r?\n/);
+  if (!lines.length) return csvText;
+
+  const seen = new Map();
+  lines[0] = lines[0]
+    .split(',')
+    .map((header) => {
+      const clean = header.trim();
+      const count = seen.get(clean) || 0;
+      seen.set(clean, count + 1);
+      return count === 0 ? clean : `${clean}_${count}`;
+    })
+    .join(',');
+
+  return lines.join('\n');
+}
+
+function parseCurrencyValue(value) {
+  const cleaned = String(value || '').replace(/[^0-9.-]/g, '');
+  const amount = Number(cleaned);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+function isPerformanceSummaryRow(row) {
+  const deviceModel = String(row?.['Device Model'] || '').trim().toLowerCase();
+  const timestamp = String(row?.Timestamp || '').trim().toLowerCase();
+  return deviceModel === 'total' || timestamp === 'total';
+}
+
+function extractPerformanceSummary(rows) {
+  const summaryRow = rows.find(isPerformanceSummaryRow);
+  if (!summaryRow) return null;
+
+  return {
+    totalBookedValue: parseCurrencyValue(summaryRow['Device Price'] || summaryRow.Value),
+    totalLoanAmount: parseCurrencyValue(summaryRow['Loan Amount']),
+    totalDownPayment: parseCurrencyValue(summaryRow['Down Payment']),
+  };
+}
+
+function buildPerformanceRowFingerprint(row) {
+  return [
+    row?.Timestamp,
+    row?.['Product Type'],
+    row?.['Store Name'],
+    row?.['Store Location'],
+    row?.['Device Type'],
+    row?.['Device Model'],
+    row?.['Device Price'],
+    row?.['Loan Amount'],
+    row?.['Down Payment'],
+    row?.Value,
+    row?.Tenure,
+    row?.['Type Of DevPro'],
+  ]
+    .map((value) => String(value || '').trim())
+    .join('|');
+}
+
 function toTitleCase(value) {
   return String(value || '')
     .trim()
@@ -128,6 +220,7 @@ function toTitleCase(value) {
 
 export function DataProvider({ children }) {
   const [raw, setRaw] = useState(INIT_RAW);
+  const [meta, setMeta] = useState(INIT_META);
   const [filters, setFilters] = useState(INIT_FILTERS);
   const [filtered, setFiltered] = useState(applyFilters(INIT_RAW, INIT_FILTERS));
   const [filterOptions, setFilterOptions] = useState(buildFilterOptions(INIT_RAW));
@@ -138,7 +231,12 @@ export function DataProvider({ children }) {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
   // Tracks new rows found since last fetch — consumed by Dashboard for notifications
-  const [newRowDelta, setNewRowDelta] = useState({ daily: 0, onboarding: 0, agents: [] });
+  const [newRowDelta, setNewRowDelta] = useState({
+    daily: 0,
+    onboarding: 0,
+    agents: [],
+    salesUpdates: [],
+  });
 
   useEffect(() => {
     setFiltered(applyFilters(raw, filters));
@@ -154,7 +252,12 @@ export function DataProvider({ children }) {
   }, []);
 
   const clearNewRowDelta = useCallback(() => {
-    setNewRowDelta({ daily: 0, onboarding: 0, agents: [] });
+    setNewRowDelta({
+      daily: 0,
+      onboarding: 0,
+      agents: [],
+      salesUpdates: [],
+    });
   }, []);
 
   const refresh = useCallback(async (silent = false) => {
@@ -168,22 +271,35 @@ export function DataProvider({ children }) {
         ? {
             onboarding: '/.netlify/functions/sheets?source=onboarding',
             daily: '/.netlify/functions/sheets?source=daily',
+            devfin: '/.netlify/functions/sheets?source=devfin',
+            devpro: '/.netlify/functions/sheets?source=devpro',
           }
         : SHEET_URLS;
 
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 10000);
-      const [onboardingResponse, dailyResponse] = await Promise.all([
+      const [onboardingResponse, dailyResponse, devfinResponse, devproResponse] = await Promise.all([
         fetch(urls.onboarding, { signal: ctrl.signal }),
         fetch(urls.daily, { signal: ctrl.signal }),
+        fetch(urls.devfin, { signal: ctrl.signal }),
+        fetch(urls.devpro, { signal: ctrl.signal }),
       ]);
       clearTimeout(timer);
-      if (!onboardingResponse.ok || !dailyResponse.ok) {
-        throw new Error(`Sheet returned ${!onboardingResponse.ok ? onboardingResponse.status : dailyResponse.status}`);
+      if (!onboardingResponse.ok || !dailyResponse.ok || !devfinResponse.ok || !devproResponse.ok) {
+        throw new Error(
+          `Sheet returned ${
+            !onboardingResponse.ok ? onboardingResponse.status
+              : !dailyResponse.ok ? dailyResponse.status
+              : !devfinResponse.ok ? devfinResponse.status
+              : devproResponse.status
+          }`
+        );
       }
-      const [onboardingText, dailyText] = await Promise.all([
+      const [onboardingText, dailyText, devfinText, devproText] = await Promise.all([
         onboardingResponse.text(),
         dailyResponse.text(),
+        devfinResponse.text(),
+        devproResponse.text(),
       ]);
       const parseOpts = {
         header: true,
@@ -193,9 +309,21 @@ export function DataProvider({ children }) {
       };
       const p1 = sanitizeRows(Papa.parse(onboardingText, parseOpts).data);
       const p2 = sanitizeRows(Papa.parse(dailyText, parseOpts).data);
+      const devfinParsed = Papa.parse(normalizePerformanceCsvHeaders(devfinText), parseOpts).data;
+      const devproParsed = Papa.parse(normalizePerformanceCsvHeaders(devproText), parseOpts).data;
+      const devfinSummary = extractPerformanceSummary(devfinParsed);
+      const devproSummary = extractPerformanceSummary(devproParsed);
+      const p3 = sanitizeRows(devfinParsed.filter((row) => !isPerformanceSummaryRow(row)), normalizePerformanceRowValues);
+      const p4 = sanitizeRows(devproParsed.filter((row) => !isPerformanceSummaryRow(row)), normalizePerformanceRowValues);
       const newRaw = {
         onboarding: p1,
         daily: p2,
+        devfin: p3,
+        devpro: p4,
+      };
+      const newMeta = {
+        devfinSummary,
+        devproSummary,
       };
       // Detect new acquisition rows and which agents added them
       const prevOnbCount   = raw.onboarding.length;
@@ -204,19 +332,43 @@ export function DataProvider({ children }) {
         .filter(r => !prevAgents.has(r['Field Agent Name']) || newRaw.onboarding.length > prevOnbCount)
         .map(r => r['Field Agent Name'])
         .filter((v, i, a) => a.indexOf(v) === i);
+      const salesSources = [
+        { key: 'devfin', label: 'Devfin' },
+        { key: 'devpro', label: 'Devpro' },
+      ];
+      const salesUpdates = salesSources
+        .map((source) => {
+          const prevKeys = new Set((raw[source.key] || []).map(buildPerformanceRowFingerprint));
+          const freshRows = (newRaw[source.key] || []).filter(
+            (row) => !prevKeys.has(buildPerformanceRowFingerprint(row))
+          );
+          return {
+            source: source.label,
+            count: freshRows.length,
+            stores: uniq(freshRows.map((row) => row['Store Name'])),
+            locations: uniq(freshRows.map((row) => row['Store Location'])),
+          };
+        })
+        .filter((item) => item.count > 0);
 
       const onbDelta   = Math.max(0, newRaw.onboarding.length - prevOnbCount);
-      if (onbDelta > 0) {
-        setNewRowDelta({ daily: 0, onboarding: onbDelta, agents: newAgents });
+      if (onbDelta > 0 || salesUpdates.length > 0) {
+        setNewRowDelta({
+          daily: 0,
+          onboarding: onbDelta,
+          agents: newAgents,
+          salesUpdates,
+        });
       }
 
       setRaw(newRaw);
+      setMeta(newMeta);
       const now = new Date();
       setLastUpdated(now);
       if (!silent) {
         setStatus({
           type: 'ok',
-          message: `✓ Live acquisition sheet — ${newRaw.onboarding.length} records synced at ${now.toLocaleTimeString()}`,
+          message: `✓ 4 live sheets synced — ${newRaw.onboarding.length} acquisitions, ${newRaw.daily.length} daily reports, ${newRaw.devfin.length} Devfin rows, ${newRaw.devpro.length} Devpro rows at ${now.toLocaleTimeString()}`,
         });
       }
     } catch (e) {
@@ -244,7 +396,7 @@ export function DataProvider({ children }) {
 
   return (
     <DataContext.Provider value={{
-      raw, filtered, filters, filterOptions,
+      raw, meta, filtered, filters, filterOptions,
       setFilter, clearAllFilters,
       refresh, status, isRefreshing, lastUpdated,
       newRowDelta, clearNewRowDelta,

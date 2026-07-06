@@ -19,6 +19,14 @@ const PAGES = [
     icon: 'M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zM6 20V4h7v5h5v11H6z',
   },
   {
+    id: 'storeperformance', label: 'Devfin Report', short: 'Devfin',
+    icon: 'M3 17h2v-7H3v7zm4 0h2V7H7v10zm4 0h2v-4h-2v4zm4 0h2V4h-2v13zm4 0h2V9h-2v8z',
+  },
+  {
+    id: 'devproreport', label: 'Devpro Report', short: 'Devpro',
+    icon: 'M3 17h2v-7H3v7zm4 0h2V9H7v8zm4 0h2V5h-2v12zm4 0h2V11h-2v6zm4 0h2V7h-2v10z',
+  },
+  {
     id: 'agents', label: 'Agents', short: 'Agents',
     icon: 'M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z',
   },
@@ -62,7 +70,7 @@ export default function Nav({ activePage, onPageChange, badges = {} }) {
         <div className="nav-r">
           <div className="live-pill">
             <div className="dot" />
-            <span className="live-pill-text">2 Live Sheets</span>
+            <span className="live-pill-text">4 Live Sheets</span>
           </div>
           {user && (
             <span className="nav-user" title={user.email}>

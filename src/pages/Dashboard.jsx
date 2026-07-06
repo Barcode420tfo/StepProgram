@@ -8,6 +8,8 @@ import StoreCapture from './StoreCapture';
 import FieldOps from './FieldOps';
 import Agents from './Agents';
 import Insights from './Insights';
+import StorePerformance from './StorePerformance';
+import DevproReport from './DevproReport';
 import { ToastContainer } from '../components/ui/Toast';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
@@ -49,6 +51,13 @@ function sendBrowserNotif(title, body) {
   }
 }
 
+function summarizeNames(values, fallback) {
+  if (!values.length) return fallback;
+  if (values.length === 1) return values[0];
+  if (values.length === 2) return `${values[0]} and ${values[1]}`;
+  return `${values[0]}, ${values[1]} +${values.length - 2} more`;
+}
+
 export default function Dashboard() {
   const { user }                             = useAuth();
   const { newRowDelta, clearNewRowDelta } = useData();
@@ -67,21 +76,36 @@ export default function Dashboard() {
 
   // Watch for new acquisition rows
   useEffect(() => {
-    if (newRowDelta.onboarding === 0) return;
+    if (newRowDelta.onboarding === 0 && (!newRowDelta.salesUpdates || newRowDelta.salesUpdates.length === 0)) return;
 
-    const agentNames = newRowDelta.agents.length
-      ? newRowDelta.agents.join(' & ')
-      : 'a field agent';
-    const message = `${newRowDelta.onboarding} new acquisition record${newRowDelta.onboarding > 1 ? 's' : ''} added by ${agentNames}`;
+    if (newRowDelta.onboarding > 0) {
+      const agentNames = summarizeNames(newRowDelta.agents, 'a field agent');
+      const message = `${newRowDelta.onboarding} new acquisition record${newRowDelta.onboarding > 1 ? 's' : ''} added by ${agentNames}`;
 
-    addToast({
-      title: '🏪 New Merchant Acquisition',
-      message,
-      type: 'info',
-      duration: 6000,
+      addToast({
+        title: '🏪 New Merchant Acquisition',
+        message,
+        type: 'info',
+        duration: 6000,
+      });
+
+      sendBrowserNotif('🏪 STEP — New merchant acquisition', message);
+    }
+
+    newRowDelta.salesUpdates.forEach((update) => {
+      const storeSummary = summarizeNames(update.stores, 'tracked stores');
+      const locationSummary = summarizeNames(update.locations, 'active locations');
+      const message = `${update.count} new ${update.source} record${update.count > 1 ? 's' : ''} added for ${storeSummary} across ${locationSummary}`;
+
+      addToast({
+        title: `📈 New ${update.source} Activity`,
+        message,
+        type: 'success',
+        duration: 7000,
+      });
+
+      sendBrowserNotif(`📈 STEP — New ${update.source} activity`, message);
     });
-
-    sendBrowserNotif('🏪 STEP — New merchant acquisition', message);
 
     clearNewRowDelta();
   }, [newRowDelta]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -104,12 +128,12 @@ export default function Dashboard() {
     setShowWelcome(false);
   };
 
-  const isCapturePage = activePage === 'storecapture';
+  const shouldHideSharedFilters = activePage === 'storecapture' || activePage === 'storeperformance' || activePage === 'devproreport';
 
   return (
     <>
       <Nav activePage={activePage} onPageChange={handlePageChange} />
-      {!isCapturePage && <ControlBar />}
+      {!shouldHideSharedFilters && <ControlBar />}
       <StatusBar />
       {showWelcome && (
         <WelcomeBanner user={user} onGoAcquisitions={goAcquisitions} onDismiss={() => setShowWelcome(false)} />
@@ -119,6 +143,8 @@ export default function Dashboard() {
         {activePage === 'merchants'   && <Merchants />}
         {activePage === 'storecapture' && <StoreCapture />}
         {activePage === 'fieldops'    && <FieldOps />}
+        {activePage === 'storeperformance' && <StorePerformance />}
+        {activePage === 'devproreport' && <DevproReport />}
         {activePage === 'agents'      && <Agents />}
         {activePage === 'insights'    && <Insights />}
       </div>
