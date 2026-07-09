@@ -174,9 +174,25 @@ function parseCurrencyValue(value) {
 }
 
 function isPerformanceSummaryRow(row) {
-  const deviceModel = String(row?.['Device Model'] || '').trim().toLowerCase();
-  const timestamp = String(row?.Timestamp || '').trim().toLowerCase();
-  return deviceModel === 'total' || timestamp === 'total';
+  const markers = [
+    row?.Timestamp,
+    row?.['Device Model'],
+    row?.['Device Model_1'],
+    row?.['Store Location'],
+    row?.['Store Name'],
+    row?.['Store Name_1'],
+    row?.['Store Name_2'],
+  ]
+    .map((value) => String(value || '').trim().toLowerCase());
+
+  const hasTotals = [
+    row?.['Device Price'],
+    row?.['Loan Amount'],
+    row?.['Down Payment'],
+    row?.Value,
+  ].some((value) => parseCurrencyValue(value) > 0);
+
+  return hasTotals && markers.includes('total');
 }
 
 function extractPerformanceSummary(rows) {
