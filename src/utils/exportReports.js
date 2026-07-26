@@ -141,32 +141,11 @@ function collectHeaders(rows, preferredHeaders) {
   return headers;
 }
 
-function addWorksheet(workbook, name, rows, preferredHeaders) {
-  const sheet = workbook.addWorksheet(name, {
-    views: [{ state: 'frozen', ySplit: 1 }],
-    properties: { defaultRowHeight: 18 },
-  });
-  const headers = collectHeaders(rows, preferredHeaders);
-  sheet.columns = headers.map((header) => ({
-    header,
-    key: header,
-    width: Math.min(42, Math.max(14, header.length + 3)),
-  }));
-  rows.forEach((row) => sheet.addRow(row));
-  sheet.autoFilter = { from: 'A1', to: { row: 1, column: Math.max(1, headers.length) } };
-  sheet.getRow(1).eachCell((cell) => {
-    cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1A73E8' } };
-    cell.alignment = { vertical: 'middle', wrapText: true };
-  });
-  sheet.getRow(1).height = 32;
-  sheet.eachRow((row, rowNumber) => {
-    if (rowNumber > 1) row.alignment = { vertical: 'top', wrapText: true };
-  });
+function buildSheet(name, rows, preferredHeaders) {
+  return { name, rows, headers: collectHeaders(rows, preferredHeaders) };
 }
 
 export async function exportAllReports(raw, { fromDate = '', toDate = '' } = {}) {
-  const { default: ExcelJS } = await import('exceljs');
   const onboarding = filterByDate(raw?.onboarding || [], ['Timestamp'], fromDate, toDate);
   const daily = filterByDate(raw?.daily || [], ['Timestamp', 'Date'], fromDate, toDate);
   const devfinSource = filterByDate(raw?.devfin || [], ['Timestamp'], fromDate, toDate);
@@ -174,10 +153,6 @@ export async function exportAllReports(raw, { fromDate = '', toDate = '' } = {})
   const ownerLookup = buildOwnerLookup(raw?.onboarding || []);
   const devfin = transactionRows(devfinSource, 'Devfin', ownerLookup);
   const devpro = transactionRows(devproSource, 'Devpro', ownerLookup);
-
-  const workbook = new ExcelJS.Workbook();
-  workbook.creator = 'STEP Network Live Ops';
-  workbook.created = new Date();
 
   const summaryRows = [
     { Report: 'Export From Date', 'Rows Exported': fromDate || 'All available dates' },
@@ -188,27 +163,30 @@ export async function exportAllReports(raw, { fromDate = '', toDate = '' } = {})
     { Report: 'Devpro Transactions', 'Rows Exported': devpro.length },
     { Report: 'All Transactions', 'Rows Exported': devfin.length + devpro.length },
   ];
-  addWorksheet(workbook, 'Export Summary', summaryRows, ['Report', 'Rows Exported']);
-  addWorksheet(
-    workbook,
-    'Store Onboarding',
-    mapRows(onboarding, ONBOARDING_COLUMNS),
-    ONBOARDING_COLUMNS.map(([header]) => header)
-  );
-  addWorksheet(
-    workbook,
-    'Daily Agent Reports',
-    mapRows(daily, DAILY_COLUMNS),
-    DAILY_COLUMNS.map(([header]) => header)
-  );
-  addWorksheet(workbook, 'Devfin Transactions', devfin, TRANSACTION_COLUMNS.map(([header]) => header));
-  addWorksheet(workbook, 'Devpro Transactions', devpro, TRANSACTION_COLUMNS.map(([header]) => header));
-  addWorksheet(workbook, 'All Transactions', [...devfin, ...devpro], TRANSACTION_COLUMNS.map(([header]) => header));
+  const sheets = [
+    buildSheet('Export Summary', summaryRows, ['Report', 'Rows Exported']),
+    buildSheet('Store Onboarding', mapRows(onboarding, ONBOARDING_COLUMNS), ONBOARDING_COLUMNS.map(([header]) => header)),
+    buildSheet('Daily Agent Reports', mapRows(daily, DAILY_COLUMNS), DAILY_COLUMNS.map(([header]) => header)),
+    buildSheet('Devfin Transactions', devfin, TRANSACTION_COLUMNS.map(([header]) => header)),
+    buildSheet('Devpro Transactions', devpro, TRANSACTION_COLUMNS.map(([header]) => header)),
+    buildSheet('All Transactions', [...devfin, ...devpro], TRANSACTION_COLUMNS.map(([header]) => header)),
+  ];
 
-  const buffer = await workbook.xlsx.writeBuffer();
-  const blob = new Blob([buffer], {
-    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  const response = await fetch('/.netlify/functions/export-reports', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sheets }),
   });
+  if (!response.ok) {
+    let message = `Export service returned ${response.status}`;
+    try {
+      const details = await response.json();
+      if (details?.error) message = details.error;
+    } catch { /* Keep the HTTP status fallback. */ }
+    throw new Error(message);
+  }
+
+  const blob = await response.blob();
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   const date = new Date().toISOString().slice(0, 10);
@@ -218,5 +196,5 @@ export async function exportAllReports(raw, { fromDate = '', toDate = '' } = {})
   document.body.appendChild(link);
   link.click();
   link.remove();
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

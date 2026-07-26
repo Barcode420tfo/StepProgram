@@ -22,7 +22,7 @@ export default function ExportReportsButton() {
       setIsOpen(false);
     } catch (exportError) {
       console.error('Spreadsheet export failed', exportError);
-      setError('Export failed — please try again');
+      setError(exportError.message || 'Export failed — please try again');
     } finally {
       setIsExporting(false);
     }
