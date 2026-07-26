@@ -145,6 +145,69 @@ function buildSheet(name, rows, preferredHeaders) {
   return { name, rows, headers: collectHeaders(rows, preferredHeaders) };
 }
 
+function escapeXml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+function buildExcelXml(sheets) {
+  const worksheets = sheets.map((sheet) => {
+    const headerCells = sheet.headers
+      .map((header) => `<Cell ss:StyleID="Header"><Data ss:Type="String">${escapeXml(header)}</Data></Cell>`)
+      .join('');
+    const dataRows = sheet.rows.map((row) => {
+      const cells = sheet.headers.map((header) => {
+        const value = row?.[header] ?? '';
+        const isNumber = typeof value === 'number' && Number.isFinite(value);
+        return `<Cell><Data ss:Type="${isNumber ? 'Number' : 'String'}">${escapeXml(value)}</Data></Cell>`;
+      }).join('');
+      return `<Row>${cells}</Row>`;
+    }).join('');
+    const columns = sheet.headers.map((header) => (
+      `<Column ss:AutoFitWidth="0" ss:Width="${Math.min(240, Math.max(85, header.length * 7))}"/>`
+    )).join('');
+
+    return `<Worksheet ss:Name="${escapeXml(sheet.name.slice(0, 31))}">
+      <Table>${columns}<Row ss:StyleID="Header">${headerCells}</Row>${dataRows}</Table>
+      <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+        <FreezePanes/><FrozenNoSplit/><SplitHorizontal>1</SplitHorizontal><TopRowBottomPane>1</TopRowBottomPane>
+      </WorksheetOptions>
+    </Worksheet>`;
+  }).join('');
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+ <Styles>
+  <Style ss:ID="Default" ss:Name="Normal"><Alignment ss:Vertical="Top" ss:WrapText="1"/></Style>
+  <Style ss:ID="Header">
+   <Font ss:Bold="1" ss:Color="#FFFFFF"/>
+   <Interior ss:Color="#1A73E8" ss:Pattern="Solid"/>
+   <Alignment ss:Vertical="Center" ss:WrapText="1"/>
+  </Style>
+ </Styles>
+ ${worksheets}
+</Workbook>`;
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 export async function exportAllReports(raw, { fromDate = '', toDate = '' } = {}) {
   const onboarding = filterByDate(raw?.onboarding || [], ['Timestamp'], fromDate, toDate);
   const daily = filterByDate(raw?.daily || [], ['Timestamp', 'Date'], fromDate, toDate);
@@ -172,29 +235,24 @@ export async function exportAllReports(raw, { fromDate = '', toDate = '' } = {})
     buildSheet('All Transactions', [...devfin, ...devpro], TRANSACTION_COLUMNS.map(([header]) => header)),
   ];
 
-  const response = await fetch('/.netlify/functions/export-reports', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sheets }),
-  });
-  if (!response.ok) {
-    let message = `Export service returned ${response.status}`;
-    try {
-      const details = await response.json();
-      if (details?.error) message = details.error;
-    } catch { /* Keep the HTTP status fallback. */ }
-    throw new Error(message);
-  }
-
-  const blob = await response.blob();
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
   const date = new Date().toISOString().slice(0, 10);
   const rangeLabel = fromDate || toDate ? `-${fromDate || 'start'}-to-${toDate || 'latest'}` : '';
-  link.href = url;
-  link.download = `STEP-all-reports${rangeLabel}-${date}.xlsx`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  const baseFilename = `STEP-all-reports${rangeLabel}-${date}`;
+
+  try {
+    const response = await fetch('/.netlify/functions/export-reports', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sheets }),
+    });
+    if (!response.ok) throw new Error(`Export service returned ${response.status}`);
+    downloadBlob(await response.blob(), `${baseFilename}.xlsx`);
+  } catch (serverError) {
+    console.warn('Using browser spreadsheet fallback:', serverError);
+    const xml = buildExcelXml(sheets);
+    downloadBlob(
+      new Blob([xml], { type: 'application/vnd.ms-excel;charset=utf-8' }),
+      `${baseFilename}.xls`
+    );
+  }
 }
