@@ -1,5 +1,6 @@
 const ONBOARDING_COLUMNS = [
-  ['Captured At', ['Timestamp']],
+  ['Date', ['Timestamp']],
+  ['Captured Timestamp', ['Timestamp']],
   ['Store Name', ['Merchant Business Name', 'Store Name', 'Business Name']],
   ['Store Onboarded By', ['Field Agent Name', 'Agent Name']],
   ['Merchant Name', ['Merchant Name']],
@@ -16,6 +17,7 @@ const ONBOARDING_COLUMNS = [
 ];
 
 const DAILY_COLUMNS = [
+  ['Date', ['Date', 'Timestamp']],
   ['Submission Timestamp', ['Timestamp']],
   ['Field Activity Date', ['Date']],
   ['Reporting Agent', ['Agent Name']],
@@ -29,6 +31,7 @@ const DAILY_COLUMNS = [
 
 const TRANSACTION_COLUMNS = [
   ['Transaction Type', []],
+  ['Date', ['Timestamp']],
   ['Transaction Timestamp', ['Timestamp']],
   ['Store Name', ['Store Name', 'Store Name_1', 'Merchant Business Name']],
   ['Store Location', ['Store Location', 'Location']],
@@ -104,7 +107,10 @@ function buildOwnerLookup(onboarding) {
 function mapRows(rows, columns, enrich = () => ({})) {
   const usedKeys = new Set(columns.flatMap(([, aliases]) => aliases));
   return rows.map((row) => {
-    const mapped = Object.fromEntries(columns.map(([header, aliases]) => [header, firstValue(row, aliases)]));
+    const mapped = Object.fromEntries(columns.map(([header, aliases]) => {
+      const value = firstValue(row, aliases);
+      return [header, header === 'Date' ? formatExportDate(value) : value];
+    }));
     const extras = Object.fromEntries(
       Object.entries(row)
         .filter(([key, value]) => !usedKeys.has(key) && String(value ?? '').trim() !== '')
@@ -112,6 +118,16 @@ function mapRows(rows, columns, enrich = () => ({})) {
     );
     return { ...mapped, ...enrich(row), ...extras };
   });
+}
+
+function formatExportDate(value) {
+  if (!value) return '';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return String(value).split(' ')[0];
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, '0');
+  const day = String(parsed.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 function transactionRows(rows, type, ownerLookup) {
