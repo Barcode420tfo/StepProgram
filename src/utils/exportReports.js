@@ -66,6 +66,31 @@ function numberValue(value) {
   return Number.isFinite(number) ? number : value;
 }
 
+function parseRowDate(row, aliases) {
+  const raw = firstValue(row, aliases);
+  if (!raw) return null;
+  const parsed = new Date(raw);
+  if (!Number.isNaN(parsed.getTime())) return parsed;
+
+  const dayFirst = String(raw).trim().match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/);
+  if (!dayFirst) return null;
+  const [, day, month, year] = dayFirst;
+  const fullYear = year.length === 2 ? `20${year}` : year;
+  const fallback = new Date(Number(fullYear), Number(month) - 1, Number(day));
+  return Number.isNaN(fallback.getTime()) ? null : fallback;
+}
+
+function filterByDate(rows, aliases, fromDate, toDate) {
+  if (!fromDate && !toDate) return rows;
+  const from = fromDate ? new Date(`${fromDate}T00:00:00`) : null;
+  const to = toDate ? new Date(`${toDate}T23:59:59.999`) : null;
+  return rows.filter((row) => {
+    const date = parseRowDate(row, aliases);
+    if (!date) return false;
+    return (!from || date >= from) && (!to || date <= to);
+  });
+}
+
 function buildOwnerLookup(onboarding) {
   const lookup = new Map();
   onboarding.forEach((row) => {
@@ -140,19 +165,23 @@ function addWorksheet(workbook, name, rows, preferredHeaders) {
   });
 }
 
-export async function exportAllReports(raw) {
+export async function exportAllReports(raw, { fromDate = '', toDate = '' } = {}) {
   const { default: ExcelJS } = await import('exceljs');
-  const onboarding = raw?.onboarding || [];
-  const daily = raw?.daily || [];
-  const ownerLookup = buildOwnerLookup(onboarding);
-  const devfin = transactionRows(raw?.devfin || [], 'Devfin', ownerLookup);
-  const devpro = transactionRows(raw?.devpro || [], 'Devpro', ownerLookup);
+  const onboarding = filterByDate(raw?.onboarding || [], ['Timestamp'], fromDate, toDate);
+  const daily = filterByDate(raw?.daily || [], ['Timestamp', 'Date'], fromDate, toDate);
+  const devfinSource = filterByDate(raw?.devfin || [], ['Timestamp'], fromDate, toDate);
+  const devproSource = filterByDate(raw?.devpro || [], ['Timestamp'], fromDate, toDate);
+  const ownerLookup = buildOwnerLookup(raw?.onboarding || []);
+  const devfin = transactionRows(devfinSource, 'Devfin', ownerLookup);
+  const devpro = transactionRows(devproSource, 'Devpro', ownerLookup);
 
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'STEP Network Live Ops';
   workbook.created = new Date();
 
   const summaryRows = [
+    { Report: 'Export From Date', 'Rows Exported': fromDate || 'All available dates' },
+    { Report: 'Export To Date', 'Rows Exported': toDate || 'All available dates' },
     { Report: 'Merchant Onboarding', 'Rows Exported': onboarding.length },
     { Report: 'Daily Agent Reports', 'Rows Exported': daily.length },
     { Report: 'Devfin Transactions', 'Rows Exported': devfin.length },
@@ -183,8 +212,9 @@ export async function exportAllReports(raw) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   const date = new Date().toISOString().slice(0, 10);
+  const rangeLabel = fromDate || toDate ? `-${fromDate || 'start'}-to-${toDate || 'latest'}` : '';
   link.href = url;
-  link.download = `STEP-all-reports-${date}.xlsx`;
+  link.download = `STEP-all-reports${rangeLabel}-${date}.xlsx`;
   document.body.appendChild(link);
   link.click();
   link.remove();
