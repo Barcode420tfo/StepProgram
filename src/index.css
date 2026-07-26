@@ -91,6 +91,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-s
 .status.ok{color:var(--green);}
 .status.err{color:var(--red);background:var(--red-lt);}
 .status.loading{color:var(--blue);}
+.status>span:first-child{min-width:0;}
+.export-wrap{margin-left:auto;display:flex;align-items:center;gap:8px;flex-shrink:0;}
+.export-btn{border:1px solid #a8c7fa;background:#fff;color:var(--blue);border-radius:6px;
+  padding:6px 10px;font:600 11px inherit;cursor:pointer;white-space:nowrap;}
+.export-btn:hover{background:#e8f0fe;border-color:var(--blue);}
+.export-btn:disabled{opacity:.65;cursor:wait;}
+.export-error{color:var(--red);font-size:10px;white-space:nowrap;}
 
 /* CANVAS */
 .canvas{padding:18px;max-width:1400px;margin:0 auto;}
