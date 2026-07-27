@@ -12,7 +12,7 @@ const SHEET_URLS = {
     'https://docs.google.com/spreadsheets/d/1Y3H2ndjEzLo-y-2CC7KIYTWu-qcadtWaEaDXfrOttuM/export?format=csv&gid=0',
 };
 
-exports.handler = async function (event) {
+export async function handler(event) {
   const source = event.queryStringParameters && event.queryStringParameters.source;
 
   if (!source || !SHEET_URLS[source]) {
@@ -40,4 +40,4 @@ exports.handler = async function (event) {
       body: JSON.stringify({ error: err.message }),
     };
   }
-};
+}

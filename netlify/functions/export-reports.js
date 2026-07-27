@@ -1,4 +1,4 @@
-const ExcelJS = require('exceljs');
+import ExcelJS from 'exceljs';
 
 const MAX_SHEETS = 10;
 const MAX_ROWS_PER_SHEET = 50000;
@@ -41,7 +41,7 @@ function addWorksheet(workbook, definition) {
   });
 }
 
-exports.handler = async function (event) {
+export async function handler(event) {
   if (event.httpMethod !== 'POST') return json(405, { error: 'Method not allowed' });
 
   try {
@@ -74,4 +74,4 @@ exports.handler = async function (event) {
     console.error('Report export failed', error);
     return json(500, { error: error.message || 'Could not create spreadsheet' });
   }
-};
+}

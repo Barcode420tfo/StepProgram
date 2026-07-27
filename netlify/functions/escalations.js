@@ -17,7 +17,7 @@ function headers() {
   };
 }
 
-exports.handler = async function (event) {
+export async function handler(event) {
   if (!API_KEY || !BASE_ID) {
     return {
       statusCode: 503,
@@ -71,4 +71,4 @@ exports.handler = async function (event) {
   }
 
   return { statusCode: 405, body: 'Method not allowed' };
-};
+}

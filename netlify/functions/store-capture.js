@@ -9,7 +9,7 @@ function json(statusCode, body) {
   };
 }
 
-exports.handler = async function (event) {
+export async function handler(event) {
   if (event.httpMethod === 'GET') {
     return json(200, { configured: Boolean(WEBHOOK_URL) });
   }
@@ -45,4 +45,4 @@ exports.handler = async function (event) {
   } catch (error) {
     return json(502, { error: error.message || 'Submission failed.' });
   }
-};
+}
