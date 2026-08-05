@@ -5,6 +5,7 @@ import SignIn from './components/auth/SignIn';
 import SignUp from './components/auth/SignUp';
 import Dashboard from './pages/Dashboard';
 import { isFirebaseConfigured } from './lib/firebase';
+import { ROLES } from './config/accessControl';
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -18,6 +19,28 @@ function PublicRoute({ children }) {
   if (loading) return <div className="loading-screen">Loading…</div>;
   if (user) return <Navigate to="/" replace />;
   return children;
+}
+
+function PendingAccess() {
+  const { user, signOut } = useAuth();
+  return (
+    <div className="auth-page">
+      <div className="auth-card pending-access-card">
+        <img src="/logo.svg" alt="STEP Network" className="pending-access-logo" />
+        <div className="role-eyebrow">Account created</div>
+        <div className="auth-title">Your access is pending</div>
+        <div className="auth-sub">An Administrator must assign your STEP role and reporting scope before operational data becomes available.</div>
+        <div className="pending-access-email">{user?.email}</div>
+        <button className="auth-btn" onClick={signOut}>Sign out</button>
+      </div>
+    </div>
+  );
+}
+
+function AuthorizedWorkspace() {
+  const { role } = useAuth();
+  if (role === ROLES.UNASSIGNED) return <PendingAccess />;
+  return <DataProvider><Dashboard /></DataProvider>;
 }
 
 function FirebaseSetupScreen() {
@@ -74,9 +97,7 @@ export default function App() {
             path="/*"
             element={
               <ProtectedRoute>
-                <DataProvider>
-                  <Dashboard />
-                </DataProvider>
+                <AuthorizedWorkspace />
               </ProtectedRoute>
             }
           />

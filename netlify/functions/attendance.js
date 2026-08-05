@@ -1,0 +1,77 @@
+const API_KEY = process.env.AIRTABLE_API_KEY;
+const BASE_ID = process.env.AIRTABLE_BASE_ID;
+const TABLE = process.env.AIRTABLE_ATTENDANCE_TABLE_NAME || 'Attendance';
+const FIREBASE_API_KEY = process.env.VITE_FIREBASE_API_KEY || process.env.FIREBASE_WEB_API_KEY;
+const TIME_ZONE = 'Africa/Lagos';
+
+const USERS = Object.freeze({
+  HijlmKyRWXMtZZ46A1ptQdVz6RB3: {
+    name: 'Peace',
+    email: 'ejiogu.peace@sapphirevirtual.com',
+    storeName: 'AL mahbub technology',
+    latitude: 6.59610,
+    longitude: 3.34004,
+    radius: 100,
+  },
+});
+
+function json(statusCode, body) {
+  return { statusCode, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, body: JSON.stringify(body) };
+}
+function airtableUrl(id = '') { return `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(TABLE)}${id ? `/${id}` : ''}`; }
+function airtableHeaders() { return { Authorization: `Bearer ${API_KEY}`, 'Content-Type': 'application/json' }; }
+function parts(date) { return Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: TIME_ZONE, weekday: 'short', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(date).filter((p) => p.type !== 'literal').map((p) => [p.type, p.value])); }
+function localDate(date) { const p=parts(date); return `${p.year}-${p.month}-${p.day}`; }
+function attendanceStatus(date) { const p=parts(date); const minutes=Number(p.hour)*60+Number(p.minute); const thursday=p.weekday==='Thu'; const scheduled=thursday?600:540; const veryLate=scheduled+30; const absent=thursday?660:600; if(minutes>=absent)return 'Absent'; if(minutes>veryLate)return 'Very Late'; if(minutes>=scheduled)return 'Late'; return 'Present'; }
+function distance(aLat,aLon,bLat,bLon) { const r=6371000; const rad=(v)=>v*Math.PI/180; const dLat=rad(bLat-aLat); const dLon=rad(bLon-aLon); const a=Math.sin(dLat/2)**2+Math.cos(rad(aLat))*Math.cos(rad(bLat))*Math.sin(dLon/2)**2; return Math.round(r*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a))); }
+
+async function authenticate(event) {
+  const token = String(event.headers.authorization || event.headers.Authorization || '').replace(/^Bearer\s+/i, '');
+  if (!token) throw Object.assign(new Error('Authentication required.'), { status: 401 });
+  const response = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(FIREBASE_API_KEY)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idToken: token }) });
+  const data = await response.json();
+  const firebaseUser = data.users?.[0];
+  if (!response.ok || !firebaseUser) throw Object.assign(new Error('Invalid or expired login.'), { status: 401 });
+  const user = USERS[firebaseUser.localId];
+  if (!user) throw Object.assign(new Error('This account is not configured for attendance.'), { status: 403 });
+  return { uid: firebaseUser.localId, ...user };
+}
+async function findToday(uid, date) {
+  const formula = `AND({Agent UID}='${uid}',{Attendance Date}='${date}')`;
+  const response = await fetch(`${airtableUrl()}?maxRecords=1&filterByFormula=${encodeURIComponent(formula)}`, { headers: airtableHeaders() });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error?.message || 'Could not read attendance table.');
+  return data.records?.[0] || null;
+}
+function output(record) {
+  if (!record) return null;
+  const f=record.fields || {};
+  return { id:record.id,date:f['Attendance Date'],store:f['Attendance Store'],clockIn:f['Clock In Time']||null,clockOut:f['Clock Out Time']||null,status:f['Attendance Status']||'Pending',clockInDistance:f['Clock In distance'],clockInAccuracy:f['Clock In accuracy'],insideClockIn:Number(f['Clock In distance'])<=100,workingMinutes:f['Working Minutes'] };
+}
+
+export async function handler(event) {
+  if (event.httpMethod !== 'POST') return json(405,{error:'Method not allowed'});
+  if (!API_KEY || !BASE_ID || !FIREBASE_API_KEY) return json(503,{error:'Attendance backend environment variables are incomplete.'});
+  try {
+    const user=await authenticate(event); const body=JSON.parse(event.body||'{}'); const action=body.action||'status'; const now=new Date(); const date=localDate(now); const existing=await findToday(user.uid,date);
+    if(action==='status') return json(200,{ok:true,attendance:output(existing),serverTime:now.toISOString()});
+    const latitude=Number(body.latitude); const longitude=Number(body.longitude); const accuracy=Number(body.accuracy);
+    if(!Number.isFinite(latitude)||!Number.isFinite(longitude)||!Number.isFinite(accuracy)) return json(400,{error:'Valid GPS coordinates and accuracy are required.'});
+    if(accuracy>100) return json(422,{error:`GPS accuracy is ±${Math.round(accuracy)}m. It must be 100m or better.`});
+    const metres=distance(latitude,longitude,user.latitude,user.longitude); const inside=metres<=user.radius;
+    if(action==='clock_in') {
+      if(existing?.fields?.['Clock In Time']) return json(409,{error:'You have already clocked in today.',attendance:output(existing)});
+      if(!inside) return json(422,{error:`Clock-in rejected. You are ${metres}m from ${user.storeName}; you must be within ${user.radius}m.`});
+      const fields={'Agent UID':user.uid,'Agent Name':user.name,'Attendance Date':date,'Attendance Store':user.storeName,'Clock In Time':now.toISOString(),'Clock In coordinates':`${latitude}, ${longitude}`,'Clock In accuracy':Math.round(accuracy),'Clock In distance':metres,'Attendance Status':attendanceStatus(now),'Created At':now.toISOString(),'Updated At':now.toISOString()};
+      const response=await fetch(airtableUrl(),{method:'POST',headers:airtableHeaders(),body:JSON.stringify({fields,typecast:true})}); const data=await response.json(); if(!response.ok) throw new Error(data.error?.message||'Could not save clock-in.'); return json(200,{ok:true,attendance:output(data),serverTime:now.toISOString()});
+    }
+    if(action==='clock_out') {
+      if(!existing?.fields?.['Clock In Time']) return json(409,{error:'No active clock-in was found for today.'});
+      if(existing.fields['Clock Out Time']) return json(409,{error:'You have already clocked out today.',attendance:output(existing)});
+      if(!inside&&!String(body.exceptionReason||'').trim()) return json(422,{error:'Clock-out outside the 100m geofence requires an exception reason.',requiresReason:true,distance:metres});
+      const started=new Date(existing.fields['Clock In Time']); const workingMinutes=Math.max(0,Math.round((now-started)/60000)); const fields={'Clock Out Time':now.toISOString(),'Clock Out coordinates':`${latitude}, ${longitude}`,'Working Minutes':workingMinutes,'Exception Reason':String(body.exceptionReason||''),'Updated At':now.toISOString()};
+      const response=await fetch(airtableUrl(existing.id),{method:'PATCH',headers:airtableHeaders(),body:JSON.stringify({fields,typecast:true})}); const data=await response.json(); if(!response.ok) throw new Error(data.error?.message||'Could not save clock-out.'); return json(200,{ok:true,attendance:output(data),serverTime:now.toISOString()});
+    }
+    return json(400,{error:'Unknown attendance action.'});
+  } catch(error) { return json(error.status||502,{error:error.message||'Attendance request failed.'}); }
+}

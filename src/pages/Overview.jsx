@@ -3,6 +3,7 @@ import ChartDataLabels from 'chartjs-plugin-datalabels';
 import { useData } from '../context/DataContext';
 import Scorecard from '../components/ui/Scorecard';
 import { groupCount, uniq } from '../utils/dataUtils';
+import { storeId, storeName } from '../config/storeIdentity';
 
 const PALETTE = ['#1a73e8', '#34a853', '#f9ab00', '#ea4335', '#9334e6', '#00897b', '#e67c13', '#0097a7'];
 const GRID = 'rgba(0,0,0,0.05)';
@@ -36,10 +37,10 @@ const donutOpts = {
 };
 
 export default function Overview() {
-  const { filtered, raw, meta } = useData();
+  const { filtered, scopedRaw, meta } = useData();
   const O = filtered.onboarding;
-  const devfinRows = raw.devfin || [];
-  const devproRows = raw.devpro || [];
+  const devfinRows = scopedRaw.devfin || [];
+  const devproRows = scopedRaw.devpro || [];
   const devfinSummary = meta?.devfinSummary;
   const devproSummary = meta?.devproSummary;
 
@@ -265,13 +266,13 @@ function buildSalesOverview(rows) {
   rows.forEach((row) => {
     const product = row['Product Type'] || 'Unspecified Product';
     const location = row['Store Location'] || 'Unspecified Location';
-    const store = row['Store Name'] || 'Unnamed Store';
+    const store = storeName(row);
     const bookedValue = parseMoney(row['Device Price'] || row.Value);
 
     totalBookedValue += bookedValue;
     productMap.set(product, (productMap.get(product) || 0) + bookedValue);
     locationMap.set(location, (locationMap.get(location) || 0) + 1);
-    storeSet.add(store);
+    storeSet.add(storeId(row) || store);
     latestSale = getLaterTimestamp(latestSale, row.Timestamp);
   });
 

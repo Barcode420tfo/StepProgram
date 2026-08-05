@@ -1,18 +1,19 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Nav from '../components/layout/Nav';
 import ControlBar from '../components/layout/ControlBar';
 import StatusBar from '../components/layout/StatusBar';
 import Overview from './Overview';
 import Merchants from './Merchants';
-import StoreCapture from './StoreCapture';
 import FieldOps from './FieldOps';
 import Agents from './Agents';
-import Insights from './Insights';
 import StorePerformance from './StorePerformance';
 import DevproReport from './DevproReport';
+import RoleHome from './RoleHome';
+import GrowthPartnerPerformance from './GrowthPartnerPerformance';
 import { ToastContainer } from '../components/ui/Toast';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
+import { ROLES } from '../config/accessControl';
 
 function getGreeting() {
   const h = new Date().getHours();
@@ -59,11 +60,12 @@ function summarizeNames(values, fallback) {
 }
 
 export default function Dashboard() {
-  const { user }                             = useAuth();
+  const { user, role, profile }              = useAuth();
   const { newRowDelta, clearNewRowDelta } = useData();
-  const [activePage, setActivePage]          = useState('overview');
+  const [activePage, setActivePage]          = useState(() => [ROLES.ADMIN, ROLES.GROWTH_PARTNER, ROLES.SUPERVISOR].includes(role) ? 'overview' : 'workspace');
   const [showWelcome, setShowWelcome]        = useState(true);
   const [toasts, setToasts]                  = useState([]);
+  const canvasRef                            = useRef(null);
 
   // Ask for browser notification permission on mount
   useEffect(() => { requestBrowserNotifPermission(); }, []);
@@ -123,30 +125,83 @@ export default function Dashboard() {
     setActivePage(page);
   };
 
+  useEffect(() => {
+    setActivePage([ROLES.ADMIN, ROLES.GROWTH_PARTNER, ROLES.SUPERVISOR].includes(role) ? 'overview' : 'workspace');
+    setShowWelcome(role === ROLES.ADMIN);
+  }, [role, profile.canViewExecutiveWorkspace]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return undefined;
+    const selector = [
+      '.card',
+      '.role-panel:not(.store-list-panel)',
+      '.agent-category-section',
+      '.agent-drilldown',
+      '.mock-preview-section',
+      '.mock-attendance-control',
+    ].join(',');
+
+    const getTitle = (panel) => {
+      const heading = panel.querySelector('.ct, .role-panel-head h2, .agent-category-head h2, .agent-drilldown-head h2, .mock-section-head h2, .mock-attendance-head strong, h2, h1');
+      return heading?.textContent?.trim() || 'Section';
+    };
+    const enhance = () => {
+      canvas.querySelectorAll(selector).forEach((panel) => {
+        if (panel.dataset.collapsibleReady === 'true' && panel.querySelector(':scope > .panel-collapse-toggle')) return;
+        panel.dataset.collapsibleReady = 'true';
+        panel.classList.add('collapsible-panel');
+        const title = getTitle(panel);
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'panel-collapse-toggle';
+        button.setAttribute('aria-expanded', 'true');
+        button.innerHTML = `<span>${title}</span><b><i>⌃</i></b>`;
+        button.title = `Collapse ${title}`;
+        button.setAttribute('aria-label', `Collapse ${title}`);
+        button.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          const collapsed = panel.classList.toggle('is-collapsed');
+          button.setAttribute('aria-expanded', String(!collapsed));
+          button.innerHTML = `<span>${title}</span><b><i>${collapsed ? '⌄' : '⌃'}</i></b>`;
+          button.title = `${collapsed ? 'Expand' : 'Collapse'} ${title}`;
+          button.setAttribute('aria-label', `${collapsed ? 'Expand' : 'Collapse'} ${title}`);
+        });
+        panel.prepend(button);
+      });
+    };
+    enhance();
+    const observer = new MutationObserver(enhance);
+    observer.observe(canvas, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [activePage, role]);
+
   const goAcquisitions = () => {
     setActivePage('merchants');
     setShowWelcome(false);
   };
 
-  const shouldHideSharedFilters = activePage === 'storecapture' || activePage === 'storeperformance' || activePage === 'devproreport';
+  const isAdmin = role === ROLES.ADMIN;
+  const shouldShowSharedFilters = [ROLES.ADMIN, ROLES.GROWTH_PARTNER, ROLES.SUPERVISOR].includes(role) && !['workspace', 'performance', 'storeperformance', 'devproreport'].includes(activePage);
 
   return (
     <>
       <Nav activePage={activePage} onPageChange={handlePageChange} />
-      {!shouldHideSharedFilters && <ControlBar />}
-      <StatusBar />
-      {showWelcome && (
+      {shouldShowSharedFilters && <ControlBar />}
+      {isAdmin && <StatusBar />}
+      {isAdmin && showWelcome && (
         <WelcomeBanner user={user} onGoAcquisitions={goAcquisitions} onDismiss={() => setShowWelcome(false)} />
       )}
-      <div className="canvas">
+      <div className="canvas" ref={canvasRef}>
+        {activePage === 'workspace'   && <RoleHome />}
         {activePage === 'overview'    && <Overview />}
         {activePage === 'merchants'   && <Merchants />}
-        {activePage === 'storecapture' && <StoreCapture />}
         {activePage === 'fieldops'    && <FieldOps />}
         {activePage === 'storeperformance' && <StorePerformance />}
         {activePage === 'devproreport' && <DevproReport />}
         {activePage === 'agents'      && <Agents />}
-        {activePage === 'insights'    && <Insights />}
+        {activePage === 'performance' && <GrowthPartnerPerformance />}
       </div>
       <ToastContainer toasts={toasts} onClose={removeToast} />
     </>

@@ -1,9 +1,9 @@
 import { useData } from '../../context/DataContext';
 
 const SOURCE_HINT = {
-  zone:       'Filters both acquisition and daily report sheets by assigned zone',
-  agent:      'Filters both acquisition and daily report sheets by agent name',
-  date:       'Filters the daily agent report sheet by submission date',
+  zone:       'Filters acquisition, DEVFIN and DEVPRO activity by recorded location',
+  agent:      'Filters timestamped activity by recorded agent name',
+  date:       'Filters derived daily activity by its source timestamp',
   storeType:  'Filters the live acquisition sheet by store category',
   readiness:  'Filters the live acquisition sheet by merchant readiness level',
   traffic:    'Filters the live acquisition sheet by estimated customer traffic',

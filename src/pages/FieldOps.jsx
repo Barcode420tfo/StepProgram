@@ -1,227 +1,122 @@
 import { Bar } from 'react-chartjs-2';
 import { useData } from '../context/DataContext';
 import Scorecard from '../components/ui/Scorecard';
-import ProgressBar from '../components/ui/ProgressBar';
-import { formatDate, sumField, uniq } from '../utils/dataUtils';
+import { uniq } from '../utils/dataUtils';
 
 const GRID = 'rgba(0,0,0,0.05)';
-const baseOpts = { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } };
+
+function parseActivityDate(value) {
+  const text = String(value || '').trim();
+  if (!text) return null;
+  const direct = new Date(text);
+  if (!Number.isNaN(direct.getTime())) return direct;
+  const match = text.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:\s+(.*))?$/);
+  if (!match) return null;
+  const [, day, month, year, time = '00:00'] = match;
+  const parsed = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${normaliseTime(time)}`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function normaliseTime(value) {
+  const text = String(value || '').trim();
+  if (!text) return '00:00:00';
+  const match = text.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?$/i);
+  if (!match) return '00:00:00';
+  let hour = Number(match[1]);
+  const suffix = match[4]?.toUpperCase();
+  if (suffix === 'PM' && hour !== 12) hour += 12;
+  if (suffix === 'AM' && hour === 12) hour = 0;
+  return `${String(hour).padStart(2, '0')}:${match[2]}:${match[3] || '00'}`;
+}
+
+function dateLabel(value, includeTime = false) {
+  const date = parseActivityDate(value);
+  if (!date) return String(value || '—');
+  return date.toLocaleString('en-GB', {
+    day: '2-digit', month: 'short', year: 'numeric',
+    ...(includeTime ? { hour: '2-digit', minute: '2-digit' } : {}),
+    timeZone: 'Africa/Lagos',
+  });
+}
+
+function dateKey(value) {
+  const date = parseActivityDate(value);
+  if (!date) return String(value || 'Unknown');
+  return new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'Africa/Lagos' }).format(date);
+}
+
+function aggregate(rows) {
+  const map = new Map();
+  rows.forEach((row) => {
+    const key = `${dateKey(row.Timestamp)}|${row['Agent Name'] || 'Unassigned'}`;
+    const current = map.get(key) || {
+      date: dateKey(row.Timestamp), agent: row['Agent Name'] || 'Unassigned',
+      zones: new Set(), acquisitions: 0, devfin: 0, devpro: 0, latest: row.Timestamp,
+    };
+    current.zones.add(row['Assigned Zone'] || 'Unassigned');
+    if (row['Activity Type'] === 'Merchant Acquisition') current.acquisitions += 1;
+    if (row['Activity Type'] === 'DEVFIN') current.devfin += 1;
+    if (row['Activity Type'] === 'DEVPRO') current.devpro += 1;
+    const currentTime = parseActivityDate(current.latest)?.getTime() || 0;
+    const rowTime = parseActivityDate(row.Timestamp)?.getTime() || 0;
+    if (rowTime > currentTime) current.latest = row.Timestamp;
+    map.set(key, current);
+  });
+  return [...map.values()].sort((a, b) => (parseActivityDate(b.latest)?.getTime() || 0) - (parseActivityDate(a.latest)?.getTime() || 0));
+}
 
 export default function FieldOps() {
   const { filtered, filters } = useData();
-  const D = filtered.daily;
+  const activities = filtered.daily;
+  const daily = aggregate(activities);
+  const agents = uniq(activities.map((row) => row['Agent Name']));
+  const acquisitionCount = activities.filter((row) => row['Activity Type'] === 'Merchant Acquisition').length;
+  const devfinCount = activities.filter((row) => row['Activity Type'] === 'DEVFIN').length;
+  const devproCount = activities.filter((row) => row['Activity Type'] === 'DEVPRO').length;
 
-  const visits = sumField(D, 'Total Merchants Visited Today');
-  const blocked = sumField(D, "Interested Merchants But Couldn't Enroll");
-  const enrolled = D.reduce((sum, row) => sum + getEnrolledCount(row), 0);
-  const blockRate = visits > 0 ? Math.round((blocked / visits) * 100) : 0;
-  const conversionRate = visits > 0 ? Math.round((enrolled / visits) * 100) : 0;
-  const agents = uniq(D.map((row) => row['Agent Name']));
-  const zones = uniq(D.map((row) => row['Assigned Zone']));
-  const feedbackCount = D.filter((row) => row['Overall Field Experience Feedbacks/Recommendations']).length;
-  const activeDateLabel = filters.date || 'all submission dates';
-
-  const agentVisitData = {
-    labels: agents.length ? agents : ['No data'],
+  const chartData = {
+    labels: agents.length ? agents : ['No activity'],
     datasets: [
-      { label: 'Visited', data: agents.length ? agents.map((agent) => sumField(D.filter((row) => row['Agent Name'] === agent), 'Total Merchants Visited Today')) : [0], backgroundColor: '#1a73e8', borderRadius: 4, barThickness: 18 },
-      { label: 'Blocked', data: agents.length ? agents.map((agent) => sumField(D.filter((row) => row['Agent Name'] === agent), "Interested Merchants But Couldn't Enroll")) : [0], backgroundColor: '#ea4335', borderRadius: 4, barThickness: 18 },
-      { label: 'Enrolled', data: agents.length ? agents.map((agent) => D.filter((row) => row['Agent Name'] === agent).reduce((sum, row) => sum + getEnrolledCount(row), 0)) : [0], backgroundColor: '#34a853', borderRadius: 4, barThickness: 18 },
+      { label: 'Merchant acquisitions', data: agents.length ? agents.map((agent) => activities.filter((row) => row['Agent Name'] === agent && row['Activity Type'] === 'Merchant Acquisition').length) : [0], backgroundColor: '#34a853', borderRadius: 4 },
+      { label: 'DEVFIN', data: agents.length ? agents.map((agent) => activities.filter((row) => row['Agent Name'] === agent && row['Activity Type'] === 'DEVFIN').length) : [0], backgroundColor: '#f9ab00', borderRadius: 4 },
+      { label: 'DEVPRO', data: agents.length ? agents.map((agent) => activities.filter((row) => row['Agent Name'] === agent && row['Activity Type'] === 'DEVPRO').length) : [0], backgroundColor: '#9334e6', borderRadius: 4 },
     ],
   };
-
-  const zoneVisitMap = zones.reduce((acc, zone) => {
-    acc[zone] = sumField(D.filter((row) => row['Assigned Zone'] === zone), 'Total Merchants Visited Today');
-    return acc;
-  }, {});
-
-  const zoneVisitData = {
-    labels: Object.keys(zoneVisitMap).length ? Object.keys(zoneVisitMap) : ['No data'],
-    datasets: [
-      { data: Object.keys(zoneVisitMap).length ? Object.values(zoneVisitMap) : [0], backgroundColor: '#9334e6', borderRadius: 4, barThickness: 24 },
-    ],
+  const chartOptions = {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: true, position: 'top', labels: { boxWidth: 9, boxHeight: 9 } } },
+    scales: { x: { grid: { color: GRID } }, y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: GRID } } },
   };
 
-  const sharedScales = {
-    x: { grid: { color: GRID }, border: { color: 'transparent' } },
-    y: { beginAtZero: true, grid: { color: GRID }, border: { color: 'transparent' } },
-  };
-  const legendOpts = {
-    ...baseOpts,
-    scales: sharedScales,
-    plugins: { legend: { display: true, position: 'top', labels: { boxWidth: 9, boxHeight: 9, padding: 10 } } },
-  };
-  const zoneOpts = {
-    ...baseOpts,
-    indexAxis: 'y',
-    scales: {
-      x: { beginAtZero: true, grid: { color: GRID }, border: { color: 'transparent' } },
-      y: { grid: { display: false } },
-    },
-  };
-
-  const comments = D.map((row) => (row['Comments On Merchant Visits'] || '').toLowerCase());
-  const feedback = D.map((row) => (row['Overall Field Experience Feedbacks/Recommendations'] || '').toLowerCase());
-  const networkCount = countRowsWithKeywords(comments, ['network', 'connect']);
-  const qrCount = countRowsWithKeywords(comments.concat(feedback), ['qr', 'response']);
-  const accountCount = countRowsWithKeywords(comments.concat(feedback), ['account', 'bank details', 'prompt', 'detail']);
-  const maxIssueCount = Math.max(networkCount, qrCount, accountCount, 1);
-
-  return (
-    <div>
-      <div className="src-banner">
-        <div className="src-banner-item">
-          <span className="src-dot" style={{ background: 'var(--green)' }} />
-          <span><span className="src-banner-label">Daily Agent Report Sheet</span> Live merchant visit reports submitted by agents on {activeDateLabel}</span>
-        </div>
-      </div>
-
-      <div className="sec">Daily agent reports — {filters.date ? `${filters.date} submissions` : 'what agents recorded in the field'}</div>
-
-      <div className="r g5">
-        <Scorecard
-          source="Daily Sheet"
-          colorClass="bl"
-          label="Merchant Visits"
-          value={visits}
-          sub={zones.length ? `Across ${zones.length} zone${zones.length !== 1 ? 's' : ''}` : 'No zones reported yet'}
-          subType="up"
-        />
-        <Scorecard
-          source="Daily Sheet"
-          colorClass="rd"
-          label="Blocked Attempts"
-          value={blocked}
-          sub={visits > 0 ? `${blockRate}% block rate` : 'No visit rows yet'}
-          subType={blocked > 0 ? 'dn' : 'up'}
-        />
-        <Scorecard
-          source="Daily Sheet"
-          colorClass="gr"
-          label="Enrolled Merchants"
-          value={enrolled}
-          sub={visits > 0 ? `${conversionRate}% field conversion` : 'No conversions reported yet'}
-          subType="up"
-        />
-        <Scorecard
-          source="Daily Sheet"
-          colorClass="te"
-          label="Agents Reporting"
-          value={agents.length}
-          sub={agents.join(' · ') || 'No agent submissions yet'}
-          subType="up"
-        />
-        <Scorecard
-          source="Daily Sheet"
-          colorClass="pu"
-          label="Feedback Logged"
-          value={feedbackCount}
-          sub="Rows with field recommendations or experience notes"
-          subType={feedbackCount > 0 ? 'up' : ''}
-        />
-      </div>
-
-      <div className="r g2">
-        <div className="card">
-          <div className="ct">Agent visit performance <span className="ds">Daily Sheet</span></div>
-          <div className="cs">Visited, blocked, and enrolled counts by reporting agent</div>
-          <div className="cw" style={{ height: '220px' }}><Bar data={agentVisitData} options={legendOpts} /></div>
-        </div>
-        <div className="card">
-          <div className="ct">Visits by zone <span className="ds">Daily Sheet</span></div>
-          <div className="cs">Where merchant field activity is concentrated for the selected filters</div>
-          <div className="cw" style={{ height: '220px' }}><Bar data={zoneVisitData} options={zoneOpts} /></div>
-        </div>
-      </div>
-
-      <div className="card" style={{ marginBottom: '12px' }}>
-        <div className="ct">Field issue patterns <span className="ds">Daily Sheet</span></div>
-        <div className="cs">Keyword signals from merchant visit comments and overall feedback</div>
-        <div style={{ marginTop: '12px' }}>
-          <ProgressBar label="Network / connectivity mentions" value={networkCount} max={maxIssueCount} color="#ea4335" />
-          <ProgressBar label="QR / response speed mentions" value={qrCount} max={maxIssueCount} color="#f9ab00" />
-          <ProgressBar label="Account / prompt friction mentions" value={accountCount} max={maxIssueCount} color="#9334e6" />
-        </div>
-      </div>
-
-      <div className="card" style={{ marginBottom: '12px' }}>
-        <div className="ct">Daily agent report log <span className="ds">Daily Sheet</span></div>
-        <div className="cs">One row per live agent report from the source sheet</div>
-        <div className="tw">
-          <table>
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Agent</th>
-                <th>Zone</th>
-                <th>Visited</th>
-                <th>Blocked</th>
-                <th>Enrolled</th>
-                <th>Block %</th>
-                <th>Merchant Visit Comments</th>
-                <th>Overall Feedback</th>
-              </tr>
-            </thead>
-            <tbody>
-              {D.length ? D.map((row, index) => {
-                const visitCount = parseFloat(row['Total Merchants Visited Today']) || 0;
-                const blockedCount = parseFloat(row["Interested Merchants But Couldn't Enroll"]) || 0;
-                const enrolledCount = getEnrolledCount(row) || Math.max(0, visitCount - blockedCount);
-                const rowBlockRate = visitCount > 0 ? Math.round((blockedCount / visitCount) * 100) : 0;
-                return (
-                  <tr key={index}>
-                    <td>
-                      <div style={{ fontWeight: 600 }}>{formatDate(row['Timestamp'])}</div>
-                      <div style={{ fontSize: '10px', color: 'var(--muted)', marginTop: 2 }}>
-                        Field date: {getFieldDateLabel(row['Date'])}
-                      </div>
-                    </td>
-                    <td><b>{row['Agent Name'] || '—'}</b></td>
-                    <td>{row['Assigned Zone'] || '—'}</td>
-                    <td>{visitCount}</td>
-                    <td><span className="pill blocked">{blockedCount}</span></td>
-                    <td><span className="pill active">{enrolledCount}</span></td>
-                    <td style={{ fontWeight: 600, color: rowBlockRate >= 100 ? 'var(--red)' : rowBlockRate > 50 ? 'var(--amber)' : 'var(--green)' }}>
-                      {visitCount > 0 ? `${rowBlockRate}%` : '—'}
-                    </td>
-                    <td style={{ minWidth: 220, whiteSpace: 'normal', fontSize: '11px', color: 'var(--muted)' }}>
-                      {row['Comments On Merchant Visits'] || '—'}
-                    </td>
-                    <td style={{ minWidth: 220, whiteSpace: 'normal', fontSize: '11px', color: 'var(--muted)' }}>
-                      {row['Overall Field Experience Feedbacks/Recommendations'] || '—'}
-                    </td>
-                  </tr>
-                );
-              }) : (
-                <tr><td colSpan="9" style={{ textAlign: 'center', fontStyle: 'italic', color: 'var(--muted)', padding: '20px' }}>No daily agent reports match the current filters</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div className="footer">Daily Reports &bull; Submission-date driven &bull; Live source aligned</div>
+  return <div>
+    <div className="src-banner">
+      <div className="src-banner-item"><span className="src-dot" style={{ background: 'var(--green)' }} /><span><span className="src-banner-label">Derived Daily Activity</span> Built from source timestamps on Merchant Acquisition, DEVFIN and DEVPRO sheets</span></div>
     </div>
-  );
-}
-
-function getEnrolledCount(row) {
-  const raw = String(row['Enrolled Merchant'] || '').trim();
-  const explicit = parseFloat(raw);
-  if (raw && !Number.isNaN(explicit) && /^\d+(\.\d+)?$/.test(raw)) return explicit;
-  if (raw) return 1;
-
-  const visits = parseFloat(row['Total Merchants Visited Today']) || 0;
-  const blocked = parseFloat(row["Interested Merchants But Couldn't Enroll"]) || 0;
-  return Math.max(0, visits - blocked);
-}
-
-function countRowsWithKeywords(items, keywords) {
-  return items.filter((text) => keywords.some((keyword) => text.includes(keyword))).length;
-}
-
-function getFieldDateLabel(value) {
-  const text = String(value || '').trim();
-  if (!text) return '—';
-  return text.split(' ')[0];
+    <div className="sec">Daily activity report — {filters.date || 'all source dates'}</div>
+    <div className="r g4">
+      <Scorecard source="3 Live Sheets" colorClass="bl" label="Total Activities" value={activities.length} sub="Distinct timestamped source rows" subType="up" />
+      <Scorecard source="Acquisition" colorClass="gr" label="Merchant Acquisitions" value={acquisitionCount} sub="Stores logged by activity date" subType="up" />
+      <Scorecard source="DEVFIN" colorClass="am" label="DEVFIN Sales" value={devfinCount} sub="Approved and fulfilled sales" subType="up" />
+      <Scorecard source="DEVPRO" colorClass="pu" label="DEVPRO Sales" value={devproCount} sub={`${agents.length} active agent${agents.length === 1 ? '' : 's'}`} subType="up" />
+    </div>
+    <div className="card" style={{ marginBottom: 12 }}>
+      <div className="ct">Agent activity mix <span className="ds">Timestamp derived</span></div>
+      <div className="cs">Every bar is calculated from the original date and time captured by its source sheet.</div>
+      <div className="cw" style={{ height: 260 }}><Bar data={chartData} options={chartOptions} /></div>
+    </div>
+    <div className="card" style={{ marginBottom: 12 }}>
+      <div className="ct">Daily agent summary <span className="ds">3 source sheets</span></div>
+      <div className="cs">One row per agent per activity date. DEVFIN, DEVPRO and acquisitions remain separate.</div>
+      <div className="tw"><table><thead><tr><th>Date</th><th>Agent</th><th>Location/zone</th><th>Merchant acquisitions</th><th>DEVFIN</th><th>DEVPRO</th><th>Total</th><th>Latest activity</th></tr></thead><tbody>
+        {daily.length ? daily.map((row) => <tr key={`${row.date}-${row.agent}`}><td><strong>{dateLabel(row.latest)}</strong></td><td><strong>{row.agent}</strong></td><td>{[...row.zones].join(' · ')}</td><td><span className="pill active">{row.acquisitions}</span></td><td>{row.devfin}</td><td>{row.devpro}</td><td><strong>{row.acquisitions + row.devfin + row.devpro}</strong></td><td>{dateLabel(row.latest, true)}</td></tr>) : <tr><td colSpan="8" className="empty-detail">No timestamped activity matches the current filters.</td></tr>}
+      </tbody></table></div>
+    </div>
+    <div className="card" style={{ marginBottom: 12 }}>
+      <div className="ct">Activity timeline</div><div className="cs">Transaction-level evidence, newest first.</div>
+      <div className="tw"><table><thead><tr><th>Date and time</th><th>Agent</th><th>Activity</th><th>Store</th><th>Location</th><th>Source</th></tr></thead><tbody>
+        {[...activities].sort((a, b) => (parseActivityDate(b.Timestamp)?.getTime() || 0) - (parseActivityDate(a.Timestamp)?.getTime() || 0)).slice(0, 100).map((row) => <tr key={row['Activity ID']}><td>{dateLabel(row.Timestamp, true)}</td><td><strong>{row['Agent Name']}</strong></td><td><span className={`activity-pill ${String(row['Activity Type']).toLowerCase().replace(' ', '-')}`}>{row['Activity Type']}</span></td><td>{row['Store Name']}</td><td>{row['Assigned Zone']}</td><td>{row['Activity Source']}</td></tr>)}
+      </tbody></table></div>
+    </div>
+    <div className="footer">Daily Reports &bull; Merchant Acquisition + DEVFIN + DEVPRO &bull; Source timestamp driven</div>
+  </div>;
 }

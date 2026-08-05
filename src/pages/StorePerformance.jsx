@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { useData } from '../context/DataContext';
 import Scorecard from '../components/ui/Scorecard';
 import { uniq } from '../utils/dataUtils';
+import { storeId, storeName } from '../config/storeIdentity';
 
 const GRID = 'rgba(0,0,0,0.05)';
 const PALETTE = ['#1a73e8', '#34a853', '#f9ab00', '#ea4335', '#9334e6', '#00897b', '#e67c13', '#0097a7'];
@@ -57,8 +58,8 @@ export function SalesReportPage({
   liveLabel = 'Live Devfin Sheet',
   supportsFinancing = true,
 }) {
-  const { raw, meta, lastUpdated } = useData();
-  const rows = raw[sourceKey] || [];
+  const { scopedRaw, meta, lastUpdated } = useData();
+  const rows = scopedRaw[sourceKey] || [];
   const summary = meta?.[summaryKey];
   const [filters, setFilters] = useState(INIT_FILTERS);
 
@@ -70,7 +71,7 @@ export function SalesReportPage({
     return uniq(
       rows
         .filter((row) => !filters.location || (row['Store Location'] || 'Unspecified Location') === filters.location)
-        .map((row) => row['Store Name'] || 'Unnamed Store')
+        .map((row) => storeName(row))
     ).sort(sortAlpha);
   }, [rows, filters.location]);
   const tenureOptions = useMemo(
@@ -81,7 +82,7 @@ export function SalesReportPage({
   const baseRows = useMemo(() => {
     return rows.filter((row) => {
       const location = row['Store Location'] || 'Unspecified Location';
-      const store = row['Store Name'] || 'Unnamed Store';
+      const store = storeName(row);
       const tenure = normalizeTenure(row);
 
       return (
@@ -510,7 +511,8 @@ function buildAnalytics(rows) {
   const transactions = rows
     .map((row, index) => {
       const location = row['Store Location'] || 'Unspecified Location';
-      const store = row['Store Name'] || 'Unnamed Store';
+      const store = storeName(row);
+      const storeIdentity = storeId(row) || `store-${store.toLowerCase()}`;
       const agentName = row['Agent Name'] || 'Unassigned';
       const productType = row['Product Type'] || 'Unspecified Product';
       const deviceType = row['Device Type'] || 'Unknown Device';
@@ -527,6 +529,7 @@ function buildAnalytics(rows) {
         timeValue: parsedTime ? parsedTime.getTime() : -Infinity,
         location,
         store,
+        storeId: storeIdentity,
         agentName,
         productType,
         deviceLabel: compactDeviceLabel(deviceType, deviceModel),
@@ -570,14 +573,14 @@ function buildAnalytics(rows) {
 
     const currentLocation = locationMap.get(item.location) || { location: item.location, sales: 0, stores: new Set(), bookedValue: 0, loanAmount: 0, downPayment: 0, latestTimestamp: '' };
     currentLocation.sales += 1;
-    currentLocation.stores.add(item.store);
+    currentLocation.stores.add(item.storeId);
     currentLocation.bookedValue += item.bookedValue;
     currentLocation.loanAmount += item.loanAmount;
     currentLocation.downPayment += item.downPayment;
     currentLocation.latestTimestamp = getLaterTimestamp(currentLocation.latestTimestamp, item.timestamp);
     locationMap.set(item.location, currentLocation);
 
-    const storeKey = `${item.location}__${item.store}`;
+    const storeKey = item.storeId;
     const currentStore = storeMap.get(storeKey) || { key: storeKey, store: item.store, agentName: item.agentName, location: item.location, sales: 0, bookedValue: 0, loanAmount: 0, downPayment: 0, latestTimestamp: '' };
     currentStore.sales += 1;
     currentStore.bookedValue += item.bookedValue;

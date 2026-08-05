@@ -1,13 +1,18 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import Papa from 'papaparse';
-import { FALLBACK, SHEET_URLS } from '../utils/fallbackData';
+import { attachAgentIdentity, canonicalAgentName } from '../config/agentIdentity';
+import { agentId, rowAgent } from '../config/agentIdentity';
+import { attachStoreIdentity, buildStoreRegistry, storeName } from '../config/storeIdentity';
+import { useAuth } from './AuthContext';
+import { ROLES } from '../config/accessControl';
+import { FALLBACK } from '../utils/fallbackData';
 import { uniq } from '../utils/dataUtils';
 
 const DataContext = createContext(null);
 
 const INIT_RAW = {
   onboarding: [...FALLBACK.onboarding],
-  daily: [...FALLBACK.daily],
+  daily: [],
   devfin: [...(FALLBACK.devfin || [])],
   devpro: [...(FALLBACK.devpro || [])],
 };
@@ -38,6 +43,30 @@ function toDateKey(s) {
 
 function getDailySubmissionDateKey(row) {
   return toDateKey(row?.Timestamp || row?.Date);
+}
+
+function buildDailyActivities(onboarding, devfin, devpro) {
+  const activities = [];
+  const add = (rows, activityType, source) => {
+    rows.forEach((row, index) => {
+      const timestamp = String(row.Timestamp || row.Date || row['Transaction Date'] || '').trim();
+      if (!timestamp) return;
+      activities.push({
+        ...row,
+        Timestamp: timestamp,
+        'Activity Type': activityType,
+        'Activity Source': source,
+        'Activity ID': `${source}-${index}-${buildPerformanceRowFingerprint(row)}`,
+        'Agent Name': row['Agent Name'] || row['Field Agent Name'] || row['Sale Owner'] || 'Unassigned',
+        'Assigned Zone': row['Assigned Zone'] || row['Store Location'] || row.Territory || 'Unassigned',
+        'Store Name': storeName(row) || '—',
+      });
+    });
+  };
+  add(onboarding, 'Merchant Acquisition', 'Merchant Acquisition Sheet');
+  add(devfin, 'DEVFIN', 'DEVFIN Sheet');
+  add(devpro, 'DEVPRO', 'DEVPRO Sheet');
+  return activities;
 }
 
 function applyFilters(raw, filters) {
@@ -127,7 +156,10 @@ function normalizeRowValues(row) {
     normalized[key] = map[value] || normalized[key].trim();
   });
 
-  return normalized;
+  ['Field Agent Name', 'Agent Name', 'Sale Owner', 'Sales Agent'].forEach((key) => {
+    if (normalized[key]) normalized[key] = canonicalAgentName(normalized[key]);
+  });
+  return attachAgentIdentity(normalized);
 }
 
 function normalizePerformanceRowValues(row) {
@@ -142,11 +174,11 @@ function normalizePerformanceRowValues(row) {
   normalized['Store Location'] = toTitleCase(preferredLocation);
   normalized['Device Type'] = preferredDeviceType;
   normalized['Device Model'] = preferredDeviceModel;
-  normalized['Agent Name'] = preferredAgentName;
+  normalized['Agent Name'] = canonicalAgentName(preferredAgentName);
   normalized['Product Type'] = String(normalized['Product Type'] || '').trim();
   normalized['Type Of DevPro'] = String(normalized['Type Of DevPro'] || '').trim();
 
-  return normalized;
+  return attachAgentIdentity(normalized);
 }
 
 function normalizePerformanceCsvHeaders(csvText) {
@@ -235,6 +267,7 @@ function toTitleCase(value) {
 }
 
 export function DataProvider({ children }) {
+  const { role, profile } = useAuth();
   const [raw, setRaw] = useState(INIT_RAW);
   const [meta, setMeta] = useState(INIT_META);
   const [filters, setFilters] = useState(INIT_FILTERS);
@@ -281,39 +314,39 @@ export function DataProvider({ children }) {
     if (!silent) setIsRefreshing(true);
     if (!silent) setStatus({ type: 'loading', message: 'Fetching live data from Google Sheets...' });
     try {
-      // In production (Netlify) fetch via server-side proxy to avoid CORS.
-      // In local dev, hit the sheets directly.
+      // Both environments use a server-side proxy so browser CORS rules never
+      // block the Google Sheets CSV exports.
       const urls = import.meta.env.PROD
         ? {
             onboarding: '/.netlify/functions/sheets?source=onboarding',
-            daily: '/.netlify/functions/sheets?source=daily',
             devfin: '/.netlify/functions/sheets?source=devfin',
             devpro: '/.netlify/functions/sheets?source=devpro',
           }
-        : SHEET_URLS;
+        : {
+            onboarding: '/api/sheets?source=onboarding',
+            devfin: '/api/sheets?source=devfin',
+            devpro: '/api/sheets?source=devpro',
+          };
 
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 10000);
-      const [onboardingResponse, dailyResponse, devfinResponse, devproResponse] = await Promise.all([
+      const [onboardingResponse, devfinResponse, devproResponse] = await Promise.all([
         fetch(urls.onboarding, { signal: ctrl.signal }),
-        fetch(urls.daily, { signal: ctrl.signal }),
         fetch(urls.devfin, { signal: ctrl.signal }),
         fetch(urls.devpro, { signal: ctrl.signal }),
       ]);
       clearTimeout(timer);
-      if (!onboardingResponse.ok || !dailyResponse.ok || !devfinResponse.ok || !devproResponse.ok) {
+      if (!onboardingResponse.ok || !devfinResponse.ok || !devproResponse.ok) {
         throw new Error(
           `Sheet returned ${
             !onboardingResponse.ok ? onboardingResponse.status
-              : !dailyResponse.ok ? dailyResponse.status
               : !devfinResponse.ok ? devfinResponse.status
               : devproResponse.status
           }`
         );
       }
-      const [onboardingText, dailyText, devfinText, devproText] = await Promise.all([
+      const [onboardingText, devfinText, devproText] = await Promise.all([
         onboardingResponse.text(),
-        dailyResponse.text(),
         devfinResponse.text(),
         devproResponse.text(),
       ]);
@@ -323,17 +356,19 @@ export function DataProvider({ children }) {
         transformHeader: h => h.trim().replace(/\s+/g, ' '),
         transform: v => typeof v === 'string' ? v.trim() : v,
       };
-      const p1 = sanitizeRows(Papa.parse(onboardingText, parseOpts).data);
-      const p2 = sanitizeRows(Papa.parse(dailyText, parseOpts).data);
+      const parsedOnboarding = sanitizeRows(Papa.parse(onboardingText, parseOpts).data);
+      const storeRegistry = buildStoreRegistry(parsedOnboarding);
+      const p1 = parsedOnboarding.map((row) => attachStoreIdentity(row, storeRegistry));
       const devfinParsed = Papa.parse(normalizePerformanceCsvHeaders(devfinText), parseOpts).data;
       const devproParsed = Papa.parse(normalizePerformanceCsvHeaders(devproText), parseOpts).data;
       const devfinSummary = extractPerformanceSummary(devfinParsed);
       const devproSummary = extractPerformanceSummary(devproParsed);
-      const p3 = sanitizeRows(devfinParsed.filter((row) => !isPerformanceSummaryRow(row)), normalizePerformanceRowValues);
-      const p4 = sanitizeRows(devproParsed.filter((row) => !isPerformanceSummaryRow(row)), normalizePerformanceRowValues);
+      const p3 = sanitizeRows(devfinParsed.filter((row) => !isPerformanceSummaryRow(row)), normalizePerformanceRowValues).map((row) => attachStoreIdentity(row, storeRegistry));
+      const p4 = sanitizeRows(devproParsed.filter((row) => !isPerformanceSummaryRow(row)), normalizePerformanceRowValues).map((row) => attachStoreIdentity(row, storeRegistry));
+      const dailyActivities = buildDailyActivities(p1, p3, p4);
       const newRaw = {
         onboarding: p1,
-        daily: p2,
+        daily: dailyActivities,
         devfin: p3,
         devpro: p4,
       };
@@ -384,7 +419,7 @@ export function DataProvider({ children }) {
       if (!silent) {
         setStatus({
           type: 'ok',
-          message: `✓ 4 live sheets synced — ${newRaw.onboarding.length} acquisitions, ${newRaw.daily.length} daily reports, ${newRaw.devfin.length} Devfin rows, ${newRaw.devpro.length} Devpro rows at ${now.toLocaleTimeString()}`,
+          message: `✓ 3 live sheets synced — ${newRaw.onboarding.length} acquisitions, ${newRaw.devfin.length} DEVFIN rows, ${newRaw.devpro.length} DEVPRO rows · ${newRaw.daily.length} timestamped daily activities at ${now.toLocaleTimeString()}`,
         });
       }
     } catch (e) {
@@ -410,9 +445,20 @@ export function DataProvider({ children }) {
     return () => clearInterval(interval);
   }, [refresh]);
 
+  const allowedAgentIds = role === ROLES.GROWTH_PARTNER
+    ? [profile?.portfolio?.name, profile?.portfolio?.agent].filter(Boolean).map(agentId).filter(Boolean)
+    : role === ROLES.SALES_AGENT
+      ? [profile?.portfolio?.name].filter(Boolean).map(agentId).filter(Boolean)
+      : [];
+  const supervisorTerritory = String(profile?.portfolio?.territory || '').toLowerCase();
+  const isSupervisorRow = (row) => Boolean(supervisorTerritory) && String(row?.['Assigned Zone'] || row?.['Store Location'] || row?.Territory || '').toLowerCase().includes(supervisorTerritory);
+  const scopedRaw = role === ROLES.ADMIN ? raw : Object.fromEntries(Object.entries(raw).map(([key, rows]) => [key, (rows || []).filter((row) => role === ROLES.SUPERVISOR ? isSupervisorRow(row) : allowedAgentIds.includes(rowAgent(row)?.id))]));
+  const scopedFiltered = applyFilters(scopedRaw, filters);
+  const scopedFilterOptions = buildFilterOptions(scopedRaw);
+
   return (
     <DataContext.Provider value={{
-      raw, meta, filtered, filters, filterOptions,
+      raw, scopedRaw, meta: role === ROLES.ADMIN ? meta : INIT_META, filtered: role === ROLES.ADMIN ? filtered : scopedFiltered, filters, filterOptions: role === ROLES.ADMIN ? filterOptions : scopedFilterOptions,
       setFilter, clearAllFilters,
       refresh, status, isRefreshing, lastUpdated,
       newRowDelta, clearNewRowDelta,

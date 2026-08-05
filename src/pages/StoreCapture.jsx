@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
+import AgentPerformanceDetail from '../components/performance/AgentPerformanceDetail';
+import { SALES_AGENT_PORTFOLIOS } from '../config/accessControl';
 
 const DRAFT_KEY = 'step-store-capture-draft';
 
@@ -30,6 +32,8 @@ export default function StoreCapture() {
   const [checkingSetup, setCheckingSetup] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [submitState, setSubmitState] = useState({ type: '', message: '' });
+  const [view, setView] = useState('performance');
+  const [selectedAgent, setSelectedAgent] = useState(null);
 
   useEffect(() => {
     const saved = localStorage.getItem(DRAFT_KEY);
@@ -73,6 +77,12 @@ export default function StoreCapture() {
 
   const canSubmit = requiredFieldsFilled(form) && !submitting;
   const canAttemptSubmit = canSubmit && !checkingSetup;
+
+  const performanceAgents = useMemo(() => {
+    const allocated = SALES_AGENT_PORTFOLIOS.map((item) => item.name);
+    const live = filterOptions.agents || [];
+    return [...new Set([...allocated, ...live].filter(Boolean))];
+  }, [filterOptions.agents]);
 
   const onChange = (key) => (e) => {
     setForm((prev) => ({ ...prev, [key]: e.target.value }));
@@ -153,8 +163,32 @@ export default function StoreCapture() {
     );
   }
 
+  if (view === 'performance') {
+    return (
+      <div>
+        <StoreCaptureTabs view={view} onChange={setView} />
+        <div className="role-hero compact">
+          <div><div className="role-eyebrow">Admin drill-down</div><h1>Agent performance analysis</h1><p>Select an agent to review month-to-date engagements, DEVFIN, DEVPRO, store allocation, attendance activity and supervisor ownership.</p></div>
+          <span className="role-badge">{performanceAgents.length} agents</span>
+        </div>
+        <div className="agent-picker-grid">
+          {performanceAgents.map((agent) => {
+            const allocation = SALES_AGENT_PORTFOLIOS.find((item) => item.name.toLowerCase() === agent.toLowerCase());
+            return <button key={agent} className={`agent-picker${selectedAgent === agent ? ' active' : ''}`} onClick={() => setSelectedAgent(agent)}>
+              <span className="agent-avatar">{agent.slice(0, 1).toUpperCase()}</span>
+              <span><strong>{agent}</strong><small>{allocation ? `${allocation.territory} · ${allocation.stores} stores` : 'Live sheet contributor'}</small><em>{allocation ? `Supervisor: ${allocation.supervisor}` : 'Supervisor not assigned'}</em></span>
+              <b>View →</b>
+            </button>;
+          })}
+        </div>
+        {selectedAgent ? <AgentPerformanceDetail agentName={selectedAgent} onClose={() => setSelectedAgent(null)} /> : <div className="agent-select-prompt"><span>↑</span><strong>Select an agent to open their performance record</strong><small>The profile combines all four live sheets without duplicating transactions.</small></div>}
+      </div>
+    );
+  }
+
   return (
     <div>
+      <StoreCaptureTabs view={view} onChange={setView} />
       <div className="src-banner">
         <div className="src-banner-item">
           <span className="src-dot" style={{ background: configured ? '#1a73e8' : '#f59e0b' }} />
@@ -286,6 +320,10 @@ STORE_CAPTURE_WEBHOOK_SECRET=optional_shared_secret`}
       </div>
     </div>
   );
+}
+
+function StoreCaptureTabs({ view, onChange }) {
+  return <div className="section-tabs"><button className={view === 'performance' ? 'active' : ''} onClick={() => onChange('performance')}>Agent performance</button><button className={view === 'capture' ? 'active' : ''} onClick={() => onChange('capture')}>Capture a store</button></div>;
 }
 
 function Field({ label, value, onChange, placeholder, listId }) {
