@@ -72,7 +72,7 @@ export const BOOTSTRAP_USERS = Object.freeze({
     role: ROLES.GROWTH_PARTNER,
     profileName: 'Towobola',
   }),
-  HijlmKyRWXMtZZ46A1ptQdVz6RB3: Object.freeze({
+  D5SAcx8YS9PpfQQ3p0NsWwBK2Ar1: Object.freeze({
     email: 'ejiogu.peace@sapphirevirtual.com',
     role: ROLES.SALES_AGENT,
     profileName: 'Peace',

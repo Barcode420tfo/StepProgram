@@ -1,5 +1,6 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+import { pathToFileURL } from 'node:url';
 import { SHEET_URLS } from './src/utils/fallbackData.js';
 
 function localSheetsProxy() {
@@ -32,8 +33,32 @@ function localSheetsProxy() {
   };
 }
 
-export default defineConfig({
-  plugins: [react(), localSheetsProxy()],
+function localAttendanceFunction() {
+  return {
+    name: 'step-local-attendance-function',
+    configureServer(server) {
+      server.middlewares.use('/.netlify/functions/attendance', async (request, response) => {
+        const chunks = [];
+        for await (const chunk of request) chunks.push(chunk);
+        const functionUrl = pathToFileURL(`${process.cwd()}/netlify/functions/attendance.js`).href;
+        const { handler } = await import(`${functionUrl}?local=${Date.now()}`);
+        const result = await handler({
+          httpMethod: request.method,
+          headers: request.headers,
+          body: Buffer.concat(chunks).toString('utf8'),
+        });
+        response.statusCode = result.statusCode;
+        Object.entries(result.headers || {}).forEach(([key, value]) => response.setHeader(key, value));
+        response.end(result.body || '');
+      });
+    },
+  };
+}
+
+export default defineConfig(({ mode }) => {
+  Object.assign(process.env, loadEnv(mode, process.cwd(), ''));
+  return {
+  plugins: [react(), localSheetsProxy(), localAttendanceFunction()],
   build: {
     sourcemap: false,          // never ship source maps — hides original code in prod
     rollupOptions: {
@@ -52,4 +77,5 @@ export default defineConfig({
       },
     },
   },
+  };
 });

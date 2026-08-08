@@ -5,7 +5,7 @@ const FIREBASE_API_KEY = process.env.VITE_FIREBASE_API_KEY || process.env.FIREBA
 const TIME_ZONE = 'Africa/Lagos';
 
 const USERS = Object.freeze({
-  HijlmKyRWXMtZZ46A1ptQdVz6RB3: {
+  D5SAcx8YS9PpfQQ3p0NsWwBK2Ar1: {
     name: 'Peace',
     email: 'ejiogu.peace@sapphirevirtual.com',
     storeName: 'AL mahbub technology',

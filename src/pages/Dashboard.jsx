@@ -15,6 +15,17 @@ import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { ROLES } from '../config/accessControl';
 
+const ROLE_PAGES = Object.freeze({
+  [ROLES.ADMIN]: ['workspace', 'overview', 'merchants', 'fieldops', 'storeperformance', 'devproreport', 'agents'],
+  [ROLES.GROWTH_PARTNER]: ['workspace', 'overview', 'merchants', 'fieldops', 'storeperformance', 'devproreport', 'performance'],
+  [ROLES.SUPERVISOR]: ['workspace', 'overview', 'merchants', 'fieldops', 'storeperformance', 'devproreport'],
+  [ROLES.SALES_AGENT]: ['workspace'],
+});
+
+function defaultPage(role) {
+  return [ROLES.ADMIN, ROLES.GROWTH_PARTNER, ROLES.SUPERVISOR].includes(role) ? 'overview' : 'workspace';
+}
+
 function getGreeting() {
   const h = new Date().getHours();
   if (h < 12) return 'Good morning';
@@ -62,7 +73,7 @@ function summarizeNames(values, fallback) {
 export default function Dashboard() {
   const { user, role, profile }              = useAuth();
   const { newRowDelta, clearNewRowDelta } = useData();
-  const [activePage, setActivePage]          = useState(() => [ROLES.ADMIN, ROLES.GROWTH_PARTNER, ROLES.SUPERVISOR].includes(role) ? 'overview' : 'workspace');
+  const [activePage, setActivePage]          = useState(() => defaultPage(role));
   const [showWelcome, setShowWelcome]        = useState(true);
   const [toasts, setToasts]                  = useState([]);
   const canvasRef                            = useRef(null);
@@ -122,11 +133,11 @@ export default function Dashboard() {
   }, []);
 
   const handlePageChange = (page) => {
-    setActivePage(page);
+    if ((ROLE_PAGES[role] || []).includes(page)) setActivePage(page);
   };
 
   useEffect(() => {
-    setActivePage([ROLES.ADMIN, ROLES.GROWTH_PARTNER, ROLES.SUPERVISOR].includes(role) ? 'overview' : 'workspace');
+    setActivePage(defaultPage(role));
     setShowWelcome(role === ROLES.ADMIN);
   }, [role, profile.canViewExecutiveWorkspace]);
 
@@ -183,7 +194,8 @@ export default function Dashboard() {
   };
 
   const isAdmin = role === ROLES.ADMIN;
-  const shouldShowSharedFilters = [ROLES.ADMIN, ROLES.GROWTH_PARTNER, ROLES.SUPERVISOR].includes(role) && !['workspace', 'performance', 'storeperformance', 'devproreport'].includes(activePage);
+  const safeActivePage = (ROLE_PAGES[role] || []).includes(activePage) ? activePage : defaultPage(role);
+  const shouldShowSharedFilters = [ROLES.ADMIN, ROLES.GROWTH_PARTNER, ROLES.SUPERVISOR].includes(role) && !['workspace', 'performance', 'storeperformance', 'devproreport'].includes(safeActivePage);
 
   return (
     <>
@@ -194,14 +206,14 @@ export default function Dashboard() {
         <WelcomeBanner user={user} onGoAcquisitions={goAcquisitions} onDismiss={() => setShowWelcome(false)} />
       )}
       <div className="canvas" ref={canvasRef}>
-        {activePage === 'workspace'   && <RoleHome />}
-        {activePage === 'overview'    && <Overview />}
-        {activePage === 'merchants'   && <Merchants />}
-        {activePage === 'fieldops'    && <FieldOps />}
-        {activePage === 'storeperformance' && <StorePerformance />}
-        {activePage === 'devproreport' && <DevproReport />}
-        {activePage === 'agents'      && <Agents />}
-        {activePage === 'performance' && <GrowthPartnerPerformance />}
+        {safeActivePage === 'workspace'   && <RoleHome />}
+        {safeActivePage === 'overview'    && <Overview />}
+        {safeActivePage === 'merchants'   && <Merchants />}
+        {safeActivePage === 'fieldops'    && <FieldOps />}
+        {safeActivePage === 'storeperformance' && <StorePerformance />}
+        {safeActivePage === 'devproreport' && <DevproReport />}
+        {safeActivePage === 'agents'      && <Agents />}
+        {safeActivePage === 'performance' && <GrowthPartnerPerformance />}
       </div>
       <ToastContainer toasts={toasts} onClose={removeToast} />
     </>

@@ -16,7 +16,7 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [claims, setClaims] = useState({});
   const [role, setRole] = useState(ROLES.UNASSIGNED);
-  const [previewRole, setPreviewRoleState] = useState(() => import.meta.env.DEV ? (localStorage.getItem('step-preview-role') || ROLES.ADMIN) : null);
+  const [previewRole, setPreviewRoleState] = useState(() => import.meta.env.DEV ? localStorage.getItem('step-preview-role') : null);
 
   useEffect(() => {
     if (!auth) { setLoading(false); return; }
@@ -27,11 +27,13 @@ export function AuthProvider({ children }) {
           const token = await firebaseUser.getIdTokenResult();
           const bootstrapIdentity = getBootstrapIdentity(firebaseUser.uid);
           const tokenClaims = {
-            ...(bootstrapIdentity?.profileName ? { profile_name: bootstrapIdentity.profileName } : {}),
             ...(token.claims || {}),
+            ...(bootstrapIdentity?.profileName ? { profile_name: bootstrapIdentity.profileName } : {}),
           };
           setClaims(tokenClaims);
-          setRole(normalizeRole(tokenClaims.role || tokenClaims.user_role || bootstrapIdentity?.role));
+          // The UID directory is authoritative for known rollout accounts.
+          // A stale or incorrect Firebase custom claim cannot elevate them.
+          setRole(normalizeRole(bootstrapIdentity?.role || tokenClaims.role || tokenClaims.user_role));
         } catch {
           setClaims({});
           setRole(ROLES.UNASSIGNED);
@@ -59,9 +61,12 @@ export function AuthProvider({ children }) {
 
   const signOut = () => firebaseSignOut(auth);
 
-  const effectiveRole = import.meta.env.DEV && previewRole ? previewRole : role;
+  // Role preview is an executive-admin tool only. It must never override the
+  // real role of a Growth Partner, Supervisor, or Sales Agent—even locally.
+  const canPreviewRoles = import.meta.env.DEV && role === ROLES.ADMIN && canViewExecutiveWorkspace(user?.uid);
+  const effectiveRole = canPreviewRoles && previewRole ? previewRole : role;
   const setPreviewRole = (nextRole) => {
-    if (!import.meta.env.DEV) return;
+    if (!canPreviewRoles) return;
     const normalized = normalizeRole(nextRole);
     localStorage.setItem('step-preview-role', normalized);
     setPreviewRoleState(normalized);
@@ -74,7 +79,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, signUp, signIn, signOut, role: effectiveRole, claims, profile, previewRole, setPreviewRole }}>
+    <AuthContext.Provider value={{ user, loading, signUp, signIn, signOut, role: effectiveRole, claims, profile, previewRole, setPreviewRole, canPreviewRoles }}>
       {children}
     </AuthContext.Provider>
   );

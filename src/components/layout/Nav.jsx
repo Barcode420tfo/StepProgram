@@ -38,7 +38,7 @@ const PAGES = [
 ];
 
 export default function Nav({ activePage, onPageChange, badges = {} }) {
-  const { signOut, user, role, profile, previewRole, setPreviewRole } = useAuth();
+  const { signOut, user, role, profile, previewRole, setPreviewRole, canPreviewRoles } = useAuth();
   const { refresh, isRefreshing } = useData();
   const visiblePages = PAGES.filter((page) => page.roles.includes(role) && (page.id !== 'workspace' || role !== ROLES.ADMIN || profile.canViewExecutiveWorkspace || import.meta.env.DEV));
 
@@ -72,7 +72,7 @@ export default function Nav({ activePage, onPageChange, badges = {} }) {
           })}
         </div>
         <div className="nav-r">
-          {import.meta.env.DEV && (
+          {canPreviewRoles && (
             <select className="role-preview" value={previewRole || role} onChange={(event) => setPreviewRole(event.target.value)} title="Development role preview">
               <option value={ROLES.ADMIN}>Admin preview</option>
               <option value={ROLES.GROWTH_PARTNER}>Growth Partner preview</option>
