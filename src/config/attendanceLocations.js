@@ -1,5 +1,5 @@
 export const GROWTH_PARTNER_ATTENDANCE = Object.freeze({
-  Jessica: { storeName: 'AL mahbub technology', latitude: 6.59610, longitude: 3.34004, radius: 100 },
+  Jessica: { storeName: 'AL mahbub technology', latitude: 6.59639, longitude: 3.33986, radius: 100 },
   Towobola: { storeName: 'Royaline Technology Limited', latitude: 6.59584, longitude: 3.33870, radius: 100 },
   'Chile Nwaiwu': { storeName: 'Go Sky Lawanson Ikenedu', latitude: 6.51033, longitude: 3.33829, radius: 100 },
   Mohammed: { storeName: 'Segzy Ventures', latitude: 6.51966, longitude: 3.38231, radius: 100 },
@@ -8,7 +8,7 @@ export const GROWTH_PARTNER_ATTENDANCE = Object.freeze({
 });
 
 export const SALES_AGENT_ATTENDANCE = Object.freeze({
-  Peace: { storeName: 'AL mahbub technology', latitude: 6.59610, longitude: 3.34004, radius: 100 },
+  Peace: { storeName: 'AL mahbub technology', latitude: 6.59639, longitude: 3.33986, radius: 100 },
   Ifeoma: { storeName: 'Adaugo Telecoms', latitude: 6.51260, longitude: 3.34982, radius: 100 },
   Queen: { storeName: 'Darling Rockus', latitude: 6.59510, longitude: 3.34045, radius: 100 },
 });
