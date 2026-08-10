@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import Papa from 'papaparse';
 import { attachAgentIdentity, canonicalAgentName } from '../config/agentIdentity';
 import { agentId, rowAgent } from '../config/agentIdentity';
@@ -279,6 +279,9 @@ export function DataProvider({ children }) {
   });
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
+  const rawRef = useRef(INIT_RAW);
+  const refreshInFlightRef = useRef(false);
+  const refreshAbortRef = useRef(null);
   // Tracks new rows found since last fetch — consumed by Dashboard for notifications
   const [newRowDelta, setNewRowDelta] = useState({
     daily: 0,
@@ -288,6 +291,7 @@ export function DataProvider({ children }) {
   });
 
   useEffect(() => {
+    rawRef.current = raw;
     setFiltered(applyFilters(raw, filters));
     setFilterOptions(buildFilterOptions(raw));
   }, [raw, filters]);
@@ -311,8 +315,13 @@ export function DataProvider({ children }) {
 
   const refresh = useCallback(async (silent = false) => {
     silent = silent === true;
+    // Mobile browsers can become unstable when the initial fetch, the manual
+    // refresh button and the poller overlap. One refresh at a time is enough.
+    if (refreshInFlightRef.current) return false;
+    refreshInFlightRef.current = true;
     if (!silent) setIsRefreshing(true);
     if (!silent) setStatus({ type: 'loading', message: 'Fetching live data from Google Sheets...' });
+    let timer;
     try {
       // Both environments use a server-side proxy so browser CORS rules never
       // block the Google Sheets CSV exports.
@@ -329,13 +338,13 @@ export function DataProvider({ children }) {
           };
 
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 10000);
+      refreshAbortRef.current = ctrl;
+      timer = setTimeout(() => ctrl.abort(), 15000);
       const [onboardingResponse, devfinResponse, devproResponse] = await Promise.all([
         fetch(`${urls.onboarding}&refresh=${Date.now()}`, { signal: ctrl.signal, cache: 'no-store' }),
         fetch(`${urls.devfin}&refresh=${Date.now()}`, { signal: ctrl.signal, cache: 'no-store' }),
         fetch(`${urls.devpro}&refresh=${Date.now()}`, { signal: ctrl.signal, cache: 'no-store' }),
       ]);
-      clearTimeout(timer);
       if (!onboardingResponse.ok || !devfinResponse.ok || !devproResponse.ok) {
         throw new Error(
           `Sheet returned ${
@@ -377,8 +386,9 @@ export function DataProvider({ children }) {
         devproSummary,
       };
       // Detect new acquisition rows and which agents added them
-      const prevOnbCount   = raw.onboarding.length;
-      const prevAgents = new Set(raw.onboarding.map(r => r['Field Agent Name']));
+      const previousRaw = rawRef.current;
+      const prevOnbCount   = previousRaw.onboarding.length;
+      const prevAgents = new Set(previousRaw.onboarding.map(r => r['Field Agent Name']));
       const newAgents  = newRaw.onboarding
         .filter(r => !prevAgents.has(r['Field Agent Name']) || newRaw.onboarding.length > prevOnbCount)
         .map(r => r['Field Agent Name'])
@@ -389,7 +399,7 @@ export function DataProvider({ children }) {
       ];
       const salesUpdates = salesSources
         .map((source) => {
-          const prevKeys = new Set((raw[source.key] || []).map(buildPerformanceRowFingerprint));
+          const prevKeys = new Set((previousRaw[source.key] || []).map(buildPerformanceRowFingerprint));
           const freshRows = (newRaw[source.key] || []).filter(
             (row) => !prevKeys.has(buildPerformanceRowFingerprint(row))
           );
@@ -413,6 +423,7 @@ export function DataProvider({ children }) {
       }
 
       setRaw(newRaw);
+      rawRef.current = newRaw;
       setMeta(newMeta);
       const now = new Date();
       setLastUpdated(now);
@@ -429,15 +440,23 @@ export function DataProvider({ children }) {
           message: `Could not reach Google Sheets (${e.message || 'blocked'}) — showing last known data.`,
         });
       }
+    } finally {
+      if (timer) clearTimeout(timer);
+      refreshAbortRef.current = null;
+      refreshInFlightRef.current = false;
+      if (!silent) setIsRefreshing(false);
     }
-    if (!silent) setIsRefreshing(false);
-  }, [raw]);
+    return true;
+  }, []);
 
   // Initial load
   useEffect(() => {
     const t = setTimeout(() => refresh(), 300);
-    return () => clearTimeout(t);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    return () => {
+      clearTimeout(t);
+      refreshAbortRef.current?.abort();
+    };
+  }, [refresh]);
 
   // Silent auto-poll every 2 minutes
   useEffect(() => {

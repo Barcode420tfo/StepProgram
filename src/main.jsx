@@ -11,6 +11,7 @@ import {
 } from 'chart.js';
 import './index.css';
 import App from './App.jsx';
+import AppErrorBoundary from './components/AppErrorBoundary.jsx';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend);
 ChartJS.defaults.font.family = "system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif";
@@ -19,6 +20,8 @@ ChartJS.defaults.color = '#5f6368';
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <App />
+    <AppErrorBoundary>
+      <App />
+    </AppErrorBoundary>
   </StrictMode>
 );
