@@ -21,7 +21,12 @@ export async function handler(event) {
   }
 
   try {
-    const response = await fetch(SHEET_URLS[source], { redirect: 'follow' });
+    const freshUrl = `${SHEET_URLS[source]}&_step_refresh=${Date.now()}`;
+    const response = await fetch(freshUrl, {
+      redirect: 'follow',
+      cache: 'no-store',
+      headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
+    });
     if (!response.ok) throw new Error(`Google Sheets returned HTTP ${response.status}`);
     const csv = await response.text();
     return {

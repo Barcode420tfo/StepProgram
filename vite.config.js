@@ -16,7 +16,12 @@ function localSheetsProxy() {
           return;
         }
         try {
-          const upstream = await fetch(SHEET_URLS[source], { redirect: 'follow' });
+          const freshUrl = `${SHEET_URLS[source]}&_step_refresh=${Date.now()}`;
+          const upstream = await fetch(freshUrl, {
+            redirect: 'follow',
+            cache: 'no-store',
+            headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
+          });
           if (!upstream.ok) throw new Error(`Google Sheets returned HTTP ${upstream.status}`);
           const csv = await upstream.text();
           response.statusCode = 200;

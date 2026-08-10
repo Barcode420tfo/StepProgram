@@ -1,11 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useData } from '../../context/DataContext';
 import { SALES_AGENT_PORTFOLIOS } from '../../config/accessControl';
-import { getMockAttendance, MOCK_ATTENDANCE_EVENT } from '../../utils/mockAttendance';
 import { agentId, rowAgent } from '../../config/agentIdentity';
 import { AUGUST_2026_INDIVIDUAL_TARGETS } from '../../config/kpiTargets';
-
-const DAILY_TARGETS = { engagements: 10, devfin: 2, devpro: 3 };
+import { auth } from '../../lib/firebase';
 
 function clean(value) { return String(value || '').trim().toLowerCase(); }
 function owns(row, agent) {
@@ -41,32 +39,8 @@ function displayDate(row) {
   const date = parseDate(row);
   return date ? date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Africa/Lagos' }) : '—';
 }
-
-const ATTENDANCE_STORES = {
-  peace: 'POINTEK, Computer Village',
-  queen: 'Vivo Exclusive Royalline, Computer Village',
-  ifeoma: 'Slot Lawanson, Lawanson Phone Village',
-};
-
-function buildMockAttendance(agentName) {
-  const store = ATTENDANCE_STORES[clean(agentName)] || 'Assigned Attendance Store';
-  const seed = [...String(agentName || '')].reduce((sum, char) => sum + char.charCodeAt(0), 0);
-  const examples = [
-    { date: '2026-08-01', status: 'Present', clockIn: '8:52 AM', clockOut: '6:08 PM', distance: 24, accuracy: 18, geofence: 'Inside geofence' },
-    { date: '2026-07-31', status: 'Late', clockIn: '9:42 AM', clockOut: '6:02 PM', distance: 68, accuracy: 31, geofence: 'Inside geofence' },
-    { date: '2026-07-30', status: 'Present', clockIn: '10:18 AM', clockOut: '6:11 PM', distance: 41, accuracy: 22, geofence: 'Inside geofence', note: 'Thursday schedule' },
-    { date: '2026-07-29', status: 'Early Clock-Out', clockIn: '9:07 AM', clockOut: '4:46 PM', distance: 83, accuracy: 45, geofence: 'Inside geofence' },
-    { date: '2026-07-28', status: 'Absent', clockIn: '10:14 AM', clockOut: '6:05 PM', distance: 57, accuracy: 29, geofence: 'Inside geofence', note: 'Clocked in after cutoff' },
-    { date: '2026-07-27', status: 'Location Exception', clockIn: '9:16 AM', clockOut: '6:00 PM', distance: 136, accuracy: 38, geofence: 'Outside geofence', note: 'Mock supervisor review' },
-  ];
-  return examples.map((item, index) => ({
-    ...item,
-    store,
-    engagements: Math.max(3, 7 + ((seed + index) % 6)),
-    latitude: clean(agentName) === 'ifeoma' ? '6.5038' : '6.6018',
-    longitude: clean(agentName) === 'ifeoma' ? '3.3534' : '3.3515',
-    mock: true,
-  }));
+function displayTime(value) {
+  return value ? new Date(value).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Lagos' }) : 'Not captured';
 }
 
 function Kpi({ label, actual, target, tone }) {
@@ -76,12 +50,35 @@ function Kpi({ label, actual, target, tone }) {
 
 export default function AgentPerformanceDetail({ agentName, onClose, compact = false, range, periodLabel, targets }) {
   const { raw } = useData();
-  const [interactiveMock, setInteractiveMock] = useState(() => getMockAttendance(agentName));
+  const [attendanceHistory, setAttendanceHistory] = useState(null);
   useEffect(() => {
-    setInteractiveMock(getMockAttendance(agentName));
-    const update = (event) => { if (event.detail?.agentName === agentName) setInteractiveMock(event.detail.record); };
-    window.addEventListener(MOCK_ATTENDANCE_EVENT, update);
-    return () => window.removeEventListener(MOCK_ATTENDANCE_EVENT, update);
+    let active = true;
+    setAttendanceHistory(null);
+    const load = async () => {
+      if (!auth.currentUser) return;
+      const token = await auth.currentUser.getIdToken();
+      const response = await fetch('/.netlify/functions/attendance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action: 'agent_history', agentName }),
+      });
+      if (!response.ok) return;
+      const data = await response.json();
+      if (active) setAttendanceHistory((data.attendance || []).map((row) => ({
+        Date: row.date,
+        'Attendance Status': row.status,
+        'Attendance Store': row.store,
+        'Clock-In Time': row.clockIn,
+        'Clock-Out Time': row.clockOut,
+        Distance: row.clockInDistance,
+        'GPS Accuracy': row.clockInAccuracy,
+        'Geofence Status': row.insideClockIn ? 'Inside geofence' : 'Outside geofence',
+        Coordinates: row.clockInCoordinates,
+        'Exception Reason': row.exceptionReason,
+      })));
+    };
+    load().catch(() => {});
+    return () => { active = false; };
   }, [agentName]);
   const report = useMemo(() => {
     const portfolio = SALES_AGENT_PORTFOLIOS.find((item) => clean(item.name) === clean(agentName));
@@ -113,9 +110,15 @@ export default function AgentPerformanceDetail({ agentName, onClose, compact = f
   }, [agentName, raw, range?.start?.getTime(), range?.end?.getTime(), targets?.engagements, targets?.devfin, targets?.devpro]);
 
   const liveLogs = [...report.daily].sort((a, b) => (parseDate(b)?.getTime() || 0) - (parseDate(a)?.getTime() || 0));
-  const hasClockData = liveLogs.some((row) => row['Clock-In Time'] || row['Clock-Out Time']);
-  const logs = hasClockData ? liveLogs : [interactiveMock, ...buildMockAttendance(agentName)].filter(Boolean);
+  const hasScopedAttendance = Array.isArray(attendanceHistory);
+  const hasSheetClockData = liveLogs.some((row) => row['Clock-In Time'] || row['Clock-Out Time']);
+  const hasClockData = hasScopedAttendance || hasSheetClockData;
+  const logs = hasScopedAttendance ? attendanceHistory : hasSheetClockData ? liveLogs : [];
   const attendanceDays = logs.filter((row) => !['Absent'].includes(row.status || row['Attendance Status'])).length;
+  const salesLog = [
+    ...report.devfin.map((row) => ({ ...row, _product: 'DEVFIN' })),
+    ...report.devpro.map((row) => ({ ...row, _product: 'DEVPRO' })),
+  ].sort((a, b) => (parseDate(b)?.getTime() || 0) - (parseDate(a)?.getTime() || 0));
   return (
     <section className={`agent-drilldown${compact ? ' compact' : ''}`}>
       <div className="agent-drilldown-head">
@@ -123,24 +126,29 @@ export default function AgentPerformanceDetail({ agentName, onClose, compact = f
         {onClose && <button className="detail-close" onClick={onClose}>Close ×</button>}
       </div>
       <div className="agent-profile-strip">
-        <div><small>Assigned stores</small><strong>{report.portfolio?.stores ?? '—'}</strong></div>
-        <div><small>{hasClockData ? 'Attendance days' : 'Attendance days · mock'}</small><strong>{hasClockData ? report.reportingDays : attendanceDays}</strong></div>
         <div><small>Stores onboarded · period</small><strong>{report.onboarding.length}</strong></div>
-        <div><small>Total sales · period</small><strong>{report.devfin.length + report.devpro.length}</strong></div>
+        <div><small>DEVFIN · period</small><strong>{report.devfin.length}</strong></div>
+        <div><small>DEVPRO · period</small><strong>{report.devpro.length}</strong></div>
+        <div><small>Attendance days</small><strong>{attendanceDays}</strong></div>
       </div>
       <div className="agent-kpi-grid">
-        <Kpi label="Merchant acquisitions" actual={report.engagements} target={report.targets.engagements} tone="green" />
+        <Kpi label="Stores onboarded" actual={report.onboarding.length} target={report.targets.engagements} tone="green" />
         <Kpi label="DEVFIN" actual={report.devfin.length} target={report.targets.devfin} tone="amber" />
         <Kpi label="DEVPRO" actual={report.devpro.length} target={report.targets.devpro} tone="purple" />
       </div>
+      <div className="role-panel">
+        <div className="role-panel-head"><div><h2>Sales performance log</h2><p>Live DEVFIN and DEVPRO records attributed to {agentName}.</p></div></div>
+        <div className="role-table-wrap"><table><thead><tr><th>Date</th><th>Product</th><th>Store</th><th>Location</th><th>Device</th><th>Value</th></tr></thead><tbody>
+          {salesLog.length ? salesLog.slice(0, 50).map((row, index) => <tr key={`${row._product}-${dateKey(row)}-${index}`}><td><strong>{displayDate(row)}</strong></td><td><span className={`attendance-status ${row._product.toLowerCase()}`}>{row._product}</span></td><td>{row['Store Name'] || '—'}</td><td>{row['Store Location'] || row.Location || '—'}</td><td>{row['Device Model'] || row['Device Type'] || '—'}</td><td>{row.Value || row['Device Price'] || row['Loan Amount'] || '—'}</td></tr>) : <tr><td colSpan="6" className="empty-detail">No live sales records found for this period.</td></tr>}
+        </tbody></table></div>
+      </div>
       <div className="role-panel attendance-log-panel">
-        <div className="role-panel-head"><div><h2>Attendance and location log</h2><p>{hasClockData ? 'Live clock-in and clock-out evidence.' : 'Mock preview data — visual demonstration only. It does not affect actual performance or attendance totals.'}</p></div>{!hasClockData && <span className="mock-data-badge">Mock data</span>}</div>
+        <div className="role-panel-head"><div><h2>Attendance and location log</h2><p>{hasClockData ? 'Live clock-in and clock-out evidence.' : 'No live attendance has been recorded for this period.'}</p></div></div>
         <div className="role-table-wrap"><table><thead><tr><th>Date</th><th>Status</th><th>Attendance store</th><th>Clock in</th><th>Clock out</th><th>Distance</th><th>GPS accuracy</th><th>Location</th><th>Engagements</th></tr></thead><tbody>
           {logs.length ? logs.slice(0, 12).map((row, index) => {
-            const mock = row.mock;
-            const status = mock ? row.status : (row['Attendance Status'] || 'Reported');
-            const outside = mock ? row.geofence === 'Outside geofence' : row['Geofence Status'] === 'Outside geofence';
-            return <tr key={`${mock ? row.date : dateKey(row)}-${index}`}><td><strong>{mock ? new Date(`${row.date}T12:00:00`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : displayDate(row)}</strong>{mock && row.note ? <small className="log-note">{row.note}</small> : null}</td><td><span className={`attendance-status ${status.toLowerCase().replaceAll(' ', '-')}`}>{status}</span></td><td>{mock ? row.store : (row['Attendance Store'] || 'Assigned store')}</td><td>{mock ? row.clockIn : (row['Clock-In Time'] || 'Not captured')}</td><td>{mock ? row.clockOut : (row['Clock-Out Time'] || 'Not captured')}</td><td>{mock ? `${row.distance}m` : (row['Distance'] ? `${row['Distance']}m` : '—')}</td><td>{mock ? `±${row.accuracy}m` : (row['GPS Accuracy'] ? `±${row['GPS Accuracy']}m` : '—')}</td><td><span className={`location-result ${outside ? 'outside' : 'inside'}`}>{mock ? row.geofence : (row['Geofence Status'] || 'Not captured')}</span>{mock && <small className="coordinates">{row.latitude}, {row.longitude}</small>}</td><td>{mock ? row.engagements : (Number(row['Customer Engagements']) || Number(row['Total Merchants Visited Today']) || 0)}</td></tr>;
+            const status = row['Attendance Status'] || 'Reported';
+            const outside = row['Geofence Status'] === 'Outside geofence';
+            return <tr key={`${dateKey(row)}-${index}`}><td><strong>{displayDate(row)}</strong>{row['Exception Reason'] ? <small className="log-note">{row['Exception Reason']}</small> : null}</td><td><span className={`attendance-status ${status.toLowerCase().replaceAll(' ', '-')}`}>{status}</span></td><td>{row['Attendance Store'] || 'Assigned store'}</td><td>{displayTime(row['Clock-In Time'])}</td><td>{displayTime(row['Clock-Out Time'])}</td><td>{row['Distance'] != null ? `${row['Distance']}m` : '—'}</td><td>{row['GPS Accuracy'] != null ? `±${row['GPS Accuracy']}m` : '—'}</td><td><span className={`location-result ${outside ? 'outside' : 'inside'}`}>{row['Geofence Status'] || 'Not captured'}</span>{row.Coordinates && <small className="coordinates">{row.Coordinates}</small>}</td><td>{Number(row['Customer Engagements']) || Number(row['Total Merchants Visited Today']) || 0}</td></tr>;
           }) : <tr><td colSpan="9" className="empty-detail">No attendance records found for this agent.</td></tr>}
         </tbody></table></div>
       </div>

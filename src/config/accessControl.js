@@ -72,6 +72,41 @@ export const BOOTSTRAP_USERS = Object.freeze({
     role: ROLES.GROWTH_PARTNER,
     profileName: 'Towobola',
   }),
+  cZXX5LSTcxdtfUIuM0QMfjoRHpH3: Object.freeze({
+    email: 'bolasanusi@sapphirevirtual.com',
+    role: ROLES.GROWTH_PARTNER,
+    profileName: 'Mohammed',
+  }),
+  Oh1LtdX5dqOlPtVeDROI526LKEh1: Object.freeze({
+    email: 'eniolasarah12@gmail.com',
+    role: ROLES.GROWTH_PARTNER,
+    profileName: 'Sarah',
+  }),
+  as9i7qhHHPS80xLVWhdB9JJxXDA2: Object.freeze({
+    email: 'esther.nathaniel@sapphirevirtual.com',
+    role: ROLES.GROWTH_PARTNER,
+    profileName: 'Esther',
+  }),
+  YKWLXkyk5nfBUPJWvhxwi7vVE1x1: Object.freeze({
+    email: 'chileenwaiwu5@gmail.com',
+    role: ROLES.GROWTH_PARTNER,
+    profileName: 'Chile Nwaiwu',
+  }),
+  '9PRNYdlEaBRg0fjSM0UjDsWnq863': Object.freeze({
+    email: 'onyinyeukwu22@gmail.com',
+    role: ROLES.GROWTH_PARTNER,
+    profileName: 'Jessica',
+  }),
+  S5TDJR6FXvQKYoNJrY3lQChWLyC2: Object.freeze({
+    email: 'ogbonnaifeoma@sapphirevirtual.com',
+    role: ROLES.SALES_AGENT,
+    profileName: 'Ifeoma',
+  }),
+  jQaCyoprVHhNyjxTkpy4Odave8D3: Object.freeze({
+    email: 'qlily0201@gmail.com',
+    role: ROLES.SALES_AGENT,
+    profileName: 'Queen',
+  }),
   D5SAcx8YS9PpfQQ3p0NsWwBK2Ar1: Object.freeze({
     email: 'ejiogu.peace@sapphirevirtual.com',
     role: ROLES.SALES_AGENT,
@@ -83,6 +118,14 @@ export const EXECUTIVE_WORKSPACE_UIDS = Object.freeze([
   'FjkbTH9hYQaaqrY1gmDI2Rdmx302',
   'vJMImsYZeWThRPQmERfnFct0FVL2',
 ]);
+export const SUPER_ADMIN_UIDS = Object.freeze([
+  'FjkbTH9hYQaaqrY1gmDI2Rdmx302',
+  'vJMImsYZeWThRPQmERfnFct0FVL2',
+]);
+
+export function isSuperAdmin(uid) {
+  return SUPER_ADMIN_UIDS.includes(String(uid || ''));
+}
 
 export function canViewExecutiveWorkspace(uid) {
   return EXECUTIVE_WORKSPACE_UIDS.includes(String(uid || ''));
@@ -106,9 +149,9 @@ export const CLUSTER_SUPERVISOR_PORTFOLIOS = Object.freeze([
 ]);
 
 export const SALES_AGENT_PORTFOLIOS = Object.freeze([
-  { name: 'Peace', territory: 'Pending reassignment', supervisor: 'Jessica', stores: 0 },
-  { name: 'Queen', territory: 'Pending reassignment', supervisor: 'Towobola', stores: 0 },
-  { name: 'Ifeoma', territory: 'Pending reassignment', supervisor: 'Chile Nwaiwu', stores: 0 },
+  { name: 'Peace', territory: 'Computer Village', supervisor: 'Jessica', stores: 0 },
+  { name: 'Queen', territory: 'Computer Village', supervisor: 'Towobola', stores: 0 },
+  { name: 'Ifeoma', territory: 'Lawanson Phone Village', supervisor: 'Chile Nwaiwu', stores: 0 },
 ]);
 
 export function normalizeRole(value) {

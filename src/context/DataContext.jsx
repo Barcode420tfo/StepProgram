@@ -331,9 +331,9 @@ export function DataProvider({ children }) {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 10000);
       const [onboardingResponse, devfinResponse, devproResponse] = await Promise.all([
-        fetch(urls.onboarding, { signal: ctrl.signal }),
-        fetch(urls.devfin, { signal: ctrl.signal }),
-        fetch(urls.devpro, { signal: ctrl.signal }),
+        fetch(`${urls.onboarding}&refresh=${Date.now()}`, { signal: ctrl.signal, cache: 'no-store' }),
+        fetch(`${urls.devfin}&refresh=${Date.now()}`, { signal: ctrl.signal, cache: 'no-store' }),
+        fetch(`${urls.devpro}&refresh=${Date.now()}`, { signal: ctrl.signal, cache: 'no-store' }),
       ]);
       clearTimeout(timer);
       if (!onboardingResponse.ok || !devfinResponse.ok || !devproResponse.ok) {

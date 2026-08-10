@@ -5,6 +5,83 @@ const FIREBASE_API_KEY = process.env.VITE_FIREBASE_API_KEY || process.env.FIREBA
 const TIME_ZONE = 'Africa/Lagos';
 
 const USERS = Object.freeze({
+  vJMImsYZeWThRPQmERfnFct0FVL2: {
+    name: 'Main Admin',
+    email: 'liltomsky@gmail.com',
+    canViewAllAttendance: true,
+  },
+  FjkbTH9hYQaaqrY1gmDI2Rdmx302: {
+    name: 'Olajide',
+    email: 'olajide@sapphirevirtual.com',
+    canViewAllAttendance: true,
+  },
+  ZJviPrASfzPg95CauDo3ORGlVSt1: {
+    name: 'Towobola',
+    email: 'towobolaadefowokan@gmail.com',
+    storeName: 'Royaline Technology Limited',
+    latitude: 6.59584,
+    longitude: 3.33870,
+    radius: 100,
+    supervisedAgents: ['Queen'],
+  },
+  as9i7qhHHPS80xLVWhdB9JJxXDA2: {
+    name: 'Esther',
+    email: 'esther.nathaniel@sapphirevirtual.com',
+    storeName: 'Sky Communication',
+    latitude: 6.63194,
+    longitude: 3.53490,
+    radius: 100,
+  },
+  Oh1LtdX5dqOlPtVeDROI526LKEh1: {
+    name: 'Sarah',
+    email: 'eniolasarah12@gmail.com',
+    storeName: 'FM Reliable',
+    latitude: 6.67311,
+    longitude: 3.29077,
+    radius: 100,
+  },
+  '9PRNYdlEaBRg0fjSM0UjDsWnq863': {
+    name: 'Jessica',
+    email: 'onyinyeukwu22@gmail.com',
+    storeName: 'AL mahbub technology',
+    latitude: 6.59610,
+    longitude: 3.34004,
+    radius: 100,
+    supervisedAgents: ['Peace'],
+  },
+  YKWLXkyk5nfBUPJWvhxwi7vVE1x1: {
+    name: 'Chile Nwaiwu',
+    email: 'chileenwaiwu5@gmail.com',
+    storeName: 'Go Sky Lawanson Ikenedu',
+    latitude: 6.51033,
+    longitude: 3.33829,
+    radius: 100,
+    supervisedAgents: ['Ifeoma'],
+  },
+  S5TDJR6FXvQKYoNJrY3lQChWLyC2: {
+    name: 'Ifeoma',
+    email: 'ogbonnaifeoma@sapphirevirtual.com',
+    storeName: 'Adaugo Telecoms',
+    latitude: 6.51260,
+    longitude: 3.34982,
+    radius: 100,
+  },
+  jQaCyoprVHhNyjxTkpy4Odave8D3: {
+    name: 'Queen',
+    email: 'qlily0201@gmail.com',
+    storeName: 'Darling Rockus',
+    latitude: 6.59510,
+    longitude: 3.34045,
+    radius: 100,
+  },
+  cZXX5LSTcxdtfUIuM0QMfjoRHpH3: {
+    name: 'Mohammed',
+    email: 'bolasanusi@sapphirevirtual.com',
+    storeName: 'Segzy Ventures',
+    latitude: 6.51966,
+    longitude: 3.38231,
+    radius: 100,
+  },
   D5SAcx8YS9PpfQQ3p0NsWwBK2Ar1: {
     name: 'Peace',
     email: 'ejiogu.peace@sapphirevirtual.com',
@@ -43,17 +120,33 @@ async function findToday(uid, date) {
   if (!response.ok) throw new Error(data.error?.message || 'Could not read attendance table.');
   return data.records?.[0] || null;
 }
+async function findAgentHistory(agentName) {
+  const formula = `{Agent Name}='${String(agentName).replaceAll("'", "\\'")}'`;
+  const response = await fetch(`${airtableUrl()}?maxRecords=62&filterByFormula=${encodeURIComponent(formula)}`, { headers: airtableHeaders() });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error?.message || 'Could not read attendance history.');
+  return (data.records || []).sort((a, b) => String(b.fields?.['Attendance Date'] || '').localeCompare(String(a.fields?.['Attendance Date'] || '')));
+}
 function output(record) {
   if (!record) return null;
   const f=record.fields || {};
-  return { id:record.id,date:f['Attendance Date'],store:f['Attendance Store'],clockIn:f['Clock In Time']||null,clockOut:f['Clock Out Time']||null,status:f['Attendance Status']||'Pending',clockInDistance:f['Clock In distance'],clockInAccuracy:f['Clock In accuracy'],insideClockIn:Number(f['Clock In distance'])<=100,workingMinutes:f['Working Minutes'] };
+  return { id:record.id,agentName:f['Agent Name'],date:f['Attendance Date'],store:f['Attendance Store'],clockIn:f['Clock In Time']||null,clockOut:f['Clock Out Time']||null,status:f['Attendance Status']||'Pending',clockInCoordinates:f['Clock In coordinates'],clockInDistance:f['Clock In distance'],clockInAccuracy:f['Clock In accuracy'],insideClockIn:Number(f['Clock In distance'])<=100,clockOutCoordinates:f['Clock Out coordinates'],workingMinutes:f['Working Minutes'],exceptionReason:f['Exception Reason']||'' };
 }
 
 export async function handler(event) {
   if (event.httpMethod !== 'POST') return json(405,{error:'Method not allowed'});
   if (!API_KEY || !BASE_ID || !FIREBASE_API_KEY) return json(503,{error:'Attendance backend environment variables are incomplete.'});
   try {
-    const user=await authenticate(event); const body=JSON.parse(event.body||'{}'); const action=body.action||'status'; const now=new Date(); const date=localDate(now); const existing=await findToday(user.uid,date);
+    const user=await authenticate(event); const body=JSON.parse(event.body||'{}'); const action=body.action||'status'; const now=new Date(); const date=localDate(now);
+    if(action==='agent_history') {
+      const agentName=String(body.agentName||'').trim();
+      if(!agentName) return json(400,{error:'Agent name is required.'});
+      if(!user.canViewAllAttendance&&user.name!==agentName&&!user.supervisedAgents?.includes(agentName)) return json(403,{error:'You are not authorized to view this agent attendance history.'});
+      const records=await findAgentHistory(agentName);
+      return json(200,{ok:true,attendance:records.map(output),serverTime:now.toISOString()});
+    }
+    if(!Number.isFinite(user.latitude)||!Number.isFinite(user.longitude)||!Number.isFinite(user.radius)) return json(403,{error:'This account does not have a personal attendance location.'});
+    const existing=await findToday(user.uid,date);
     if(action==='status') return json(200,{ok:true,attendance:output(existing),serverTime:now.toISOString()});
     const latitude=Number(body.latitude); const longitude=Number(body.longitude); const accuracy=Number(body.accuracy);
     if(!Number.isFinite(latitude)||!Number.isFinite(longitude)||!Number.isFinite(accuracy)) return json(400,{error:'Valid GPS coordinates and accuracy are required.'});

@@ -7,7 +7,7 @@ import {
   updateProfile,
 } from 'firebase/auth';
 import { auth } from '../lib/firebase';
-import { canViewExecutiveWorkspace, getBootstrapIdentity, getPortfolioForUser, normalizeRole, ROLE_LABELS, ROLES } from '../config/accessControl';
+import { canViewExecutiveWorkspace, getBootstrapIdentity, getPortfolioForUser, isSuperAdmin, normalizeRole, ROLE_LABELS, ROLES } from '../config/accessControl';
 
 const AuthContext = createContext(null);
 
@@ -71,11 +71,15 @@ export function AuthProvider({ children }) {
     localStorage.setItem('step-preview-role', normalized);
     setPreviewRoleState(normalized);
   };
+  const portfolio = getPortfolioForUser(effectiveRole, user, claims);
+  const isGrowthPartnerSupervisor = effectiveRole === ROLES.GROWTH_PARTNER && Boolean(portfolio?.agent);
   const profile = {
     role: effectiveRole,
-    roleLabel: ROLE_LABELS[effectiveRole],
-    portfolio: getPortfolioForUser(effectiveRole, user, claims),
+    roleLabel: isSuperAdmin(user?.uid) ? 'Super Admin' : isGrowthPartnerSupervisor ? 'Growth Partner / Supervisor' : ROLE_LABELS[effectiveRole],
+    portfolio,
     canViewExecutiveWorkspace: canViewExecutiveWorkspace(user?.uid),
+    isSuperAdmin: isSuperAdmin(user?.uid),
+    isGrowthPartnerSupervisor,
   };
 
   return (

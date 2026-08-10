@@ -22,7 +22,14 @@ const ROLE_PAGES = Object.freeze({
   [ROLES.SALES_AGENT]: ['workspace'],
 });
 
-function defaultPage(role) {
+function isRestrictedGrowthPartner(role, profile) {
+  return role === ROLES.GROWTH_PARTNER && ['Mohammed', 'Sarah', 'Esther'].includes(profile?.portfolio?.name);
+}
+function pagesFor(role, profile) {
+  return isRestrictedGrowthPartner(role, profile) ? ['workspace'] : (ROLE_PAGES[role] || []);
+}
+function defaultPage(role, profile) {
+  if (isRestrictedGrowthPartner(role, profile)) return 'workspace';
   return [ROLES.ADMIN, ROLES.GROWTH_PARTNER, ROLES.SUPERVISOR].includes(role) ? 'overview' : 'workspace';
 }
 
@@ -73,7 +80,7 @@ function summarizeNames(values, fallback) {
 export default function Dashboard() {
   const { user, role, profile }              = useAuth();
   const { newRowDelta, clearNewRowDelta } = useData();
-  const [activePage, setActivePage]          = useState(() => defaultPage(role));
+  const [activePage, setActivePage]          = useState(() => defaultPage(role, profile));
   const [showWelcome, setShowWelcome]        = useState(true);
   const [toasts, setToasts]                  = useState([]);
   const canvasRef                            = useRef(null);
@@ -133,11 +140,11 @@ export default function Dashboard() {
   }, []);
 
   const handlePageChange = (page) => {
-    if ((ROLE_PAGES[role] || []).includes(page)) setActivePage(page);
+    if (pagesFor(role, profile).includes(page)) setActivePage(page);
   };
 
   useEffect(() => {
-    setActivePage(defaultPage(role));
+    setActivePage(defaultPage(role, profile));
     setShowWelcome(role === ROLES.ADMIN);
   }, [role, profile.canViewExecutiveWorkspace]);
 
@@ -194,7 +201,7 @@ export default function Dashboard() {
   };
 
   const isAdmin = role === ROLES.ADMIN;
-  const safeActivePage = (ROLE_PAGES[role] || []).includes(activePage) ? activePage : defaultPage(role);
+  const safeActivePage = pagesFor(role, profile).includes(activePage) ? activePage : defaultPage(role, profile);
   const shouldShowSharedFilters = [ROLES.ADMIN, ROLES.GROWTH_PARTNER, ROLES.SUPERVISOR].includes(role) && !['workspace', 'performance', 'storeperformance', 'devproreport'].includes(safeActivePage);
 
   return (

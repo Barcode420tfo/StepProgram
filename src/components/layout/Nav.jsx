@@ -40,13 +40,14 @@ const PAGES = [
 export default function Nav({ activePage, onPageChange, badges = {} }) {
   const { signOut, user, role, profile, previewRole, setPreviewRole, canPreviewRoles } = useAuth();
   const { refresh, isRefreshing } = useData();
-  const visiblePages = PAGES.filter((page) => page.roles.includes(role) && (page.id !== 'workspace' || role !== ROLES.ADMIN || profile.canViewExecutiveWorkspace || import.meta.env.DEV));
+  const isRestrictedGrowthPartner = role === ROLES.GROWTH_PARTNER && ['Mohammed', 'Sarah', 'Esther'].includes(profile?.portfolio?.name);
+  const visiblePages = PAGES.filter((page) => page.roles.includes(role) && (!isRestrictedGrowthPartner || page.id === 'workspace') && (page.id !== 'workspace' || role !== ROLES.ADMIN || profile.canViewExecutiveWorkspace || import.meta.env.DEV));
 
   return (
     <>
       {/* ── Desktop / Tablet nav ── */}
       <nav className="nav">
-        <button className="nav-logo-button" type="button" onClick={() => onPageChange([ROLES.ADMIN, ROLES.GROWTH_PARTNER, ROLES.SUPERVISOR].includes(role) ? 'overview' : 'workspace')} title="Go to overview" aria-label="Go to overview">
+        <button className="nav-logo-button" type="button" onClick={() => onPageChange(isRestrictedGrowthPartner ? 'workspace' : [ROLES.ADMIN, ROLES.GROWTH_PARTNER, ROLES.SUPERVISOR].includes(role) ? 'overview' : 'workspace')} title="Go to home" aria-label="Go to home">
           <img src="/logo.svg" alt="STEP Network" className="nav-logo" />
         </button>
         <div className="nav-brand">
@@ -85,7 +86,7 @@ export default function Nav({ activePage, onPageChange, badges = {} }) {
             <span className="live-pill-text">3 Live Sheets</span>
           </div>
           {user && (
-            <span className="nav-user" title={user.email}><strong>{ROLE_LABELS[role]}</strong><small>{user.email}</small></span>
+            <span className="nav-user" title={user.email}><strong>{profile.roleLabel || ROLE_LABELS[role]}</strong><small>{user.email}</small></span>
           )}
           <button
             className={`ref-btn${isRefreshing ? ' spin' : ''}`}

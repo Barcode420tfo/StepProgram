@@ -7,12 +7,6 @@ import { AUGUST_2026_INDIVIDUAL_TARGETS, isAugust2026Range } from '../config/kpi
 
 const GP_TARGETS = { onboarding: 60, devfin: 26, devpro: 52 };
 const AGENT_DAILY_TARGETS = { engagements: 10, devfin: 2, devpro: 3 };
-const MOCK_ENGAGEMENTS = { Peace: 42, Queen: 37, Ifeoma: 51 };
-const MOCK_ATTENDANCE = {
-  Peace: ['present', 'present', 'present', 'present', 'late', 'present'],
-  Queen: ['present', 'late', 'present', 'absent', 'present', 'present'],
-  Ifeoma: ['present', 'present', 'present', 'present', 'present', 'present'],
-};
 
 function clean(value) { return String(value || '').trim().toLowerCase(); }
 function owns(row, name) {
@@ -96,19 +90,17 @@ export default function Agents() {
   })), [raw, range.start.getTime(), range.end.getTime()]);
 
   const salesAgents = useMemo(() => SALES_AGENT_PORTFOLIOS.map((agent) => {
-    const attendance = MOCK_ATTENDANCE[agent.name] || [];
-    const elapsedStatuses = attendance.slice(0, elapsedThisWeek);
-    const attended = elapsedStatuses.filter((status) => status === 'present' || status === 'late').length;
+    const engagements = raw.daily.filter((row) => owns(row, agent.name) && inRange(row, range) && row['Activity Type'] === 'Merchant Acquisition').length;
     return {
       ...agent,
-      engagements: MOCK_ENGAGEMENTS[agent.name] || 0,
+      engagements,
       devfin: raw.devfin.filter((row) => owns(row, agent.name) && inRange(row, range)).length,
       devpro: raw.devpro.filter((row) => owns(row, agent.name) && inRange(row, range)).length,
-      attended,
+      attended: null,
       elapsed: elapsedThisWeek,
-      attendancePercentage: percent(attended, elapsedThisWeek),
+      attendancePercentage: null,
     };
-  }), [raw.devfin, raw.devpro, range.start.getTime(), range.end.getTime(), elapsedThisWeek]);
+  }), [raw.daily, raw.devfin, raw.devpro, range.start.getTime(), range.end.getTime(), elapsedThisWeek]);
   const comparisonFor = (name, source) => source.filter((row) => owns(row, name) && inRange(row, comparisonRange)).length;
 
   const monthLabel = new Date(`${month}-01T12:00:00`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
@@ -124,9 +116,9 @@ export default function Agents() {
     </section>
 
     <section className="agent-category-section">
-      <div className="agent-category-head"><div><span className="category-icon sa">SA</span><div><h2>Sales Agents</h2><p>Engagements, DEVFIN, DEVPRO and weekly attendance percentage</p></div></div><div className="weekly-rule"><span className="mock-data-badge">Attendance preview</span><strong>{elapsedThisWeek}/6 working days elapsed this week</strong></div></div>
+      <div className="agent-category-head"><div><span className="category-icon sa">SA</span><div><h2>Sales Agents</h2><p>Live engagements, DEVFIN, DEVPRO and attendance records</p></div></div><div className="weekly-rule"><strong>{elapsedThisWeek}/6 working days elapsed this week</strong></div></div>
       <div className="role-table-wrap category-table"><table><thead><tr><th>Sales Agent</th><th>Supervisor</th><th>Assigned stores</th><th>Engagements MTD</th><th>DEVFIN MTD</th><th>DEVPRO MTD</th><th>Weekly attendance</th></tr></thead><tbody>
-        {salesAgents.map((agent) => <tr key={agent.name} className={`clickable-agent-row${selectedAgent === agent.name ? ' selected' : ''}`} onClick={() => setSelectedAgent(agent.name)}><td><button className="agent-name-link" onClick={() => setSelectedAgent(agent.name)}>{agent.name} <span>View →</span></button><small className="role-row-label">Sales Agent · {agent.territory}</small></td><td>{agent.supervisor}</td><td>{agent.stores}</td><td><ProgressValue actual={agent.engagements} target={engagementTarget} color="green" /></td><td><ProgressValue actual={agent.devfin} target={agentDevfinTarget} color="amber" comparison={mode==='compare'?comparisonFor(agent.name,raw.devfin):undefined} /></td><td><ProgressValue actual={agent.devpro} target={agentDevproTarget} color="purple" comparison={mode==='compare'?comparisonFor(agent.name,raw.devpro):undefined} /></td><td><div className="attendance-percentage"><strong>{agent.attendancePercentage}%</strong><span>{agent.attended}/{agent.elapsed} elapsed days attended</span><div><i style={{ width: `${agent.attendancePercentage}%` }} /></div><small>Resets every Monday</small></div></td></tr>)}
+        {salesAgents.map((agent) => <tr key={agent.name} className={`clickable-agent-row${selectedAgent === agent.name ? ' selected' : ''}`} onClick={() => setSelectedAgent(agent.name)}><td><button className="agent-name-link" onClick={() => setSelectedAgent(agent.name)}>{agent.name} <span>View →</span></button><small className="role-row-label">Sales Agent · {agent.territory}</small></td><td>{agent.supervisor}</td><td>{agent.stores}</td><td><ProgressValue actual={agent.engagements} target={engagementTarget} color="green" /></td><td><ProgressValue actual={agent.devfin} target={agentDevfinTarget} color="amber" comparison={mode==='compare'?comparisonFor(agent.name,raw.devfin):undefined} /></td><td><ProgressValue actual={agent.devpro} target={agentDevproTarget} color="purple" comparison={mode==='compare'?comparisonFor(agent.name,raw.devpro):undefined} /></td><td><div className="attendance-percentage"><strong>—</strong><span>Open agent to view live attendance</span><small>No preview data</small></div></td></tr>)}
       </tbody></table></div>
     </section>
 
