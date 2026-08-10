@@ -8,6 +8,13 @@
 [functions]
   directory = "netlify/functions"
 
+# Serve the React application for direct visits and refreshes on routes such
+# as /signin. Netlify Functions and static assets take precedence.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
 # ── Security headers on every response ──────────────────────────────────────
 [[headers]]
   for = "/*"
