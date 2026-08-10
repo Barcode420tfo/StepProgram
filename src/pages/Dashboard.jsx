@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Nav from '../components/layout/Nav';
 import ControlBar from '../components/layout/ControlBar';
 import StatusBar from '../components/layout/StatusBar';
@@ -83,7 +83,6 @@ export default function Dashboard() {
   const [activePage, setActivePage]          = useState(() => defaultPage(role, profile));
   const [showWelcome, setShowWelcome]        = useState(true);
   const [toasts, setToasts]                  = useState([]);
-  const canvasRef                            = useRef(null);
 
   // Ask for browser notification permission on mount
   useEffect(() => { requestBrowserNotifPermission(); }, []);
@@ -148,53 +147,6 @@ export default function Dashboard() {
     setShowWelcome(role === ROLES.ADMIN);
   }, [role, profile.canViewExecutiveWorkspace]);
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return undefined;
-    const selector = [
-      '.card',
-      '.role-panel:not(.store-list-panel)',
-      '.agent-category-section',
-      '.agent-drilldown',
-      '.mock-preview-section',
-      '.mock-attendance-control',
-    ].join(',');
-
-    const getTitle = (panel) => {
-      const heading = panel.querySelector('.ct, .role-panel-head h2, .agent-category-head h2, .agent-drilldown-head h2, .mock-section-head h2, .mock-attendance-head strong, h2, h1');
-      return heading?.textContent?.trim() || 'Section';
-    };
-    const enhance = () => {
-      canvas.querySelectorAll(selector).forEach((panel) => {
-        if (panel.dataset.collapsibleReady === 'true' && panel.querySelector(':scope > .panel-collapse-toggle')) return;
-        panel.dataset.collapsibleReady = 'true';
-        panel.classList.add('collapsible-panel');
-        const title = getTitle(panel);
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'panel-collapse-toggle';
-        button.setAttribute('aria-expanded', 'true');
-        button.innerHTML = `<span>${title}</span><b><i>⌃</i></b>`;
-        button.title = `Collapse ${title}`;
-        button.setAttribute('aria-label', `Collapse ${title}`);
-        button.addEventListener('click', (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          const collapsed = panel.classList.toggle('is-collapsed');
-          button.setAttribute('aria-expanded', String(!collapsed));
-          button.innerHTML = `<span>${title}</span><b><i>${collapsed ? '⌄' : '⌃'}</i></b>`;
-          button.title = `${collapsed ? 'Expand' : 'Collapse'} ${title}`;
-          button.setAttribute('aria-label', `${collapsed ? 'Expand' : 'Collapse'} ${title}`);
-        });
-        panel.prepend(button);
-      });
-    };
-    enhance();
-    const observer = new MutationObserver(enhance);
-    observer.observe(canvas, { childList: true, subtree: true });
-    return () => observer.disconnect();
-  }, [activePage, role]);
-
   const goAcquisitions = () => {
     setActivePage('merchants');
     setShowWelcome(false);
@@ -212,7 +164,7 @@ export default function Dashboard() {
       {isAdmin && showWelcome && (
         <WelcomeBanner user={user} onGoAcquisitions={goAcquisitions} onDismiss={() => setShowWelcome(false)} />
       )}
-      <div className="canvas" ref={canvasRef}>
+      <div className="canvas">
         {safeActivePage === 'workspace'   && <RoleHome />}
         {safeActivePage === 'overview'    && <Overview />}
         {safeActivePage === 'merchants'   && <Merchants />}
