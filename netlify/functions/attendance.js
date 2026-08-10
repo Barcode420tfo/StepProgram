@@ -130,7 +130,11 @@ async function findAgentHistory(agentName) {
 function output(record) {
   if (!record) return null;
   const f=record.fields || {};
-  return { id:record.id,agentName:f['Agent Name'],date:f['Attendance Date'],store:f['Attendance Store'],clockIn:f['Clock In Time']||null,clockOut:f['Clock Out Time']||null,status:f['Attendance Status']||'Pending',clockInCoordinates:f['Clock In coordinates'],clockInDistance:f['Clock In distance'],clockInAccuracy:f['Clock In accuracy'],insideClockIn:Number(f['Clock In distance'])<=100,clockOutCoordinates:f['Clock Out coordinates'],workingMinutes:f['Working Minutes'],exceptionReason:f['Exception Reason']||'' };
+  const clockInLatitude=f['Clock In Latitude'];
+  const clockInLongitude=f['Clock in Longitude'];
+  const clockOutLatitude=f['Clock Out Latitude'];
+  const clockOutLongitude=f['Clock Out Longitude'];
+  return { id:record.id,agentName:f['Agent Name'],date:f['Attendance Date'],store:f['Attendance Store'],clockIn:f['Clock In Time']||null,clockOut:f['Clock Out Time']||null,status:f['Attendance Status']||'Pending',clockInLatitude,clockInLongitude,clockInCoordinates:Number.isFinite(Number(clockInLatitude))&&Number.isFinite(Number(clockInLongitude))?`${clockInLatitude}, ${clockInLongitude}`:null,clockInDistance:f['Clock In Distance'],clockInAccuracy:f['Clock In Accuracy'],insideClockIn:Number(f['Clock In Distance'])<=100,clockOutLatitude,clockOutLongitude,clockOutCoordinates:Number.isFinite(Number(clockOutLatitude))&&Number.isFinite(Number(clockOutLongitude))?`${clockOutLatitude}, ${clockOutLongitude}`:null,clockOutDistance:f['Clock Out Distance'],clockOutAccuracy:f['Clock Out Accuracy'],workingMinutes:f['Working Minutes'],exceptionReason:f['Exception Reason']||'' };
 }
 
 export async function handler(event) {
@@ -155,14 +159,14 @@ export async function handler(event) {
     if(action==='clock_in') {
       if(existing?.fields?.['Clock In Time']) return json(409,{error:'You have already clocked in today.',attendance:output(existing)});
       if(!inside) return json(422,{error:`Clock-in rejected. You are ${metres}m from ${user.storeName}; you must be within ${user.radius}m.`});
-      const fields={'Agent UID':user.uid,'Agent Name':user.name,'Attendance Date':date,'Attendance Store':user.storeName,'Clock In Time':now.toISOString(),'Clock In coordinates':`${latitude}, ${longitude}`,'Clock In accuracy':Math.round(accuracy),'Clock In distance':metres,'Attendance Status':attendanceStatus(now),'Created At':now.toISOString(),'Updated At':now.toISOString()};
+      const fields={'Agent UID':user.uid,'Agent Name':user.name,'Attendance Date':date,'Attendance Store':user.storeName,'Clock In Time':now.toISOString(),'Clock In Latitude':latitude,'Clock in Longitude':longitude,'Clock In Accuracy':Math.round(accuracy),'Clock In Distance':metres,'Attendance Status':attendanceStatus(now),'Created At':now.toISOString(),'Updated At':now.toISOString()};
       const response=await fetch(airtableUrl(),{method:'POST',headers:airtableHeaders(),body:JSON.stringify({fields,typecast:true})}); const data=await response.json(); if(!response.ok) throw new Error(data.error?.message||'Could not save clock-in.'); return json(200,{ok:true,attendance:output(data),serverTime:now.toISOString()});
     }
     if(action==='clock_out') {
       if(!existing?.fields?.['Clock In Time']) return json(409,{error:'No active clock-in was found for today.'});
       if(existing.fields['Clock Out Time']) return json(409,{error:'You have already clocked out today.',attendance:output(existing)});
       if(!inside&&!String(body.exceptionReason||'').trim()) return json(422,{error:'Clock-out outside the 100m geofence requires an exception reason.',requiresReason:true,distance:metres});
-      const started=new Date(existing.fields['Clock In Time']); const workingMinutes=Math.max(0,Math.round((now-started)/60000)); const fields={'Clock Out Time':now.toISOString(),'Clock Out coordinates':`${latitude}, ${longitude}`,'Working Minutes':workingMinutes,'Exception Reason':String(body.exceptionReason||''),'Updated At':now.toISOString()};
+      const started=new Date(existing.fields['Clock In Time']); const workingMinutes=Math.max(0,Math.round((now-started)/60000)); const fields={'Clock Out Time':now.toISOString(),'Clock Out Latitude':latitude,'Clock Out Longitude':longitude,'Clock Out Accuracy':Math.round(accuracy),'Clock Out Distance':metres,'Working Minutes':workingMinutes,'Exception Reason':String(body.exceptionReason||''),'Updated At':now.toISOString()};
       const response=await fetch(airtableUrl(existing.id),{method:'PATCH',headers:airtableHeaders(),body:JSON.stringify({fields,typecast:true})}); const data=await response.json(); if(!response.ok) throw new Error(data.error?.message||'Could not save clock-out.'); return json(200,{ok:true,attendance:output(data),serverTime:now.toISOString()});
     }
     return json(400,{error:'Unknown attendance action.'});
