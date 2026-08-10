@@ -20,12 +20,22 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     if (!auth) { setLoading(false); return; }
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    let active = true;
+    const watchdog = window.setTimeout(() => {
+      if (active) setLoading(false);
+    }, 8000);
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      if (!active) return;
       setUser(firebaseUser);
       if (firebaseUser) {
-        try {
-          const token = await firebaseUser.getIdTokenResult();
-          const bootstrapIdentity = getBootstrapIdentity(firebaseUser.uid);
+        const bootstrapIdentity = getBootstrapIdentity(firebaseUser.uid);
+        // Known rollout accounts resolve immediately from the immutable UID
+        // directory. A slow token refresh must never blank the application.
+        setClaims(bootstrapIdentity?.profileName ? { profile_name: bootstrapIdentity.profileName } : {});
+        setRole(normalizeRole(bootstrapIdentity?.role));
+        setLoading(false);
+        firebaseUser.getIdTokenResult().then((token) => {
+          if (!active) return;
           const tokenClaims = {
             ...(token.claims || {}),
             ...(bootstrapIdentity?.profileName ? { profile_name: bootstrapIdentity.profileName } : {}),
@@ -34,17 +44,28 @@ export function AuthProvider({ children }) {
           // The UID directory is authoritative for known rollout accounts.
           // A stale or incorrect Firebase custom claim cannot elevate them.
           setRole(normalizeRole(bootstrapIdentity?.role || tokenClaims.role || tokenClaims.user_role));
-        } catch {
+        }).catch(() => {
+          if (!active || bootstrapIdentity) return;
           setClaims({});
           setRole(ROLES.UNASSIGNED);
-        }
+        });
       } else {
         setClaims({});
         setRole(ROLES.UNASSIGNED);
+        setLoading(false);
       }
+    }, () => {
+      if (!active) return;
+      setUser(null);
+      setClaims({});
+      setRole(ROLES.UNASSIGNED);
       setLoading(false);
     });
-    return unsubscribe;
+    return () => {
+      active = false;
+      window.clearTimeout(watchdog);
+      unsubscribe();
+    };
   }, []);
 
   const signUp = async (email, password, displayName) => {
