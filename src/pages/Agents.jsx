@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useData } from '../context/DataContext';
 import AgentPerformanceDetail from '../components/performance/AgentPerformanceDetail';
 import { SALES_AGENT_PORTFOLIOS, SUPERVISOR_PORTFOLIOS } from '../config/accessControl';
@@ -68,6 +68,7 @@ export default function Agents() {
   const [fromDate, setFromDate] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`);
   const [toDate, setToDate] = useState(now.toISOString().slice(0, 10));
   const [selectedAgent, setSelectedAgent] = useState(null);
+  const detailRef = useRef(null);
   const range = mode === 'range' ? { start: new Date(`${fromDate}T00:00:00`), end: new Date(`${toDate}T23:59:59.999`) } : monthRange(month, mode === 'mtd');
   const monthDays = daysInRange(range);
   const selectedIsCurrentMonth = month === `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}` && mode !== 'range';
@@ -81,6 +82,18 @@ export default function Agents() {
   const engagementTarget = augustTargets ? AUGUST_2026_INDIVIDUAL_TARGETS.engagements : AGENT_DAILY_TARGETS.engagements * monthDays;
   const elapsedThisWeek = elapsedWeekdays(now);
   const comparisonRange = monthRange(compareMonth);
+  useEffect(() => {
+    if (!selectedAgent || !detailRef.current) return;
+    const frame = window.requestAnimationFrame(() => detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    return () => window.cancelAnimationFrame(frame);
+  }, [selectedAgent]);
+  const openAgent = (name) => {
+    if (selectedAgent === name) {
+      detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+    setSelectedAgent(name);
+  };
 
   const growthPartners = useMemo(() => SUPERVISOR_PORTFOLIOS.map((partner) => ({
     ...partner,
@@ -104,6 +117,8 @@ export default function Agents() {
   const comparisonFor = (name, source) => source.filter((row) => owns(row, name) && inRange(row, comparisonRange)).length;
 
   const monthLabel = new Date(`${month}-01T12:00:00`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+  const comparisonLabel = new Date(`${compareMonth}-01T12:00:00`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+  const selectedIsGrowthPartner = growthPartners.some((partner) => partner.name === selectedAgent);
   return <div>
     <div className="role-hero compact"><div><div className="role-eyebrow">Admin only</div><h1>People performance</h1><p>Growth Partners and Sales Agents are measured separately according to their own responsibilities.</p></div><span className="role-badge">Full organisation</span></div>
     <div className="analytics-controls"><div className="section-tabs"><button className={mode==='mtd'?'active':''} onClick={()=>setMode('mtd')}>Month to date</button><button className={mode==='compare'?'active':''} onClick={()=>setMode('compare')}>Month to month</button><button className={mode==='range'?'active':''} onClick={()=>setMode('range')}>Date to date</button></div>{mode!=='range'?<label>Performance month<input type="month" value={month} onChange={(event)=>setMonth(event.target.value)}/></label>:<><label>From<input type="date" value={fromDate} onChange={(event)=>setFromDate(event.target.value)}/></label><label>To<input type="date" value={toDate} onChange={(event)=>setToDate(event.target.value)}/></label></>}{mode==='compare'&&<label>Compare with<input type="month" value={compareMonth} onChange={(event)=>setCompareMonth(event.target.value)}/></label>}<div className="period-summary"><span>{mode==='range'?`${fromDate} → ${toDate}`:monthLabel}</span><strong>{historicalMonthlyTargets?'Historical targets: 26 DEVFIN · 52 DEVPRO':`${monthDays} eligible working days`}</strong></div></div>
@@ -111,18 +126,18 @@ export default function Agents() {
     <section className="agent-category-section">
       <div className="agent-category-head"><div><span className="category-icon gp">GP</span><div><h2>Growth Partners</h2><p>No attendance measurement · Personal onboarding, DEVFIN and DEVPRO targets only</p></div></div><strong>{growthPartners.length} Growth Partners</strong></div>
       <div className="role-table-wrap category-table"><table><thead><tr><th>Growth Partner</th><th>Territory responsibility</th><th>Sales Agent supervised</th><th>Stores onboarded MTD</th><th>Personal DEVFIN MTD</th><th>Personal DEVPRO MTD</th></tr></thead><tbody>
-        {growthPartners.map((partner) => <tr key={partner.name}><td><strong>{partner.name}</strong><small className="role-row-label">Growth Partner</small></td><td>{partner.territory}</td><td>{partner.agent || '—'}</td><td><ProgressValue actual={partner.onboarding} target={onboardingTarget} color="green" comparison={mode==='compare'?comparisonFor(partner.name,raw.onboarding):undefined} /></td><td><ProgressValue actual={partner.devfin} target={gpDevfinTarget} color="amber" comparison={mode==='compare'?comparisonFor(partner.name,raw.devfin):undefined} /></td><td><ProgressValue actual={partner.devpro} target={gpDevproTarget} color="purple" comparison={mode==='compare'?comparisonFor(partner.name,raw.devpro):undefined} /></td></tr>)}
+        {growthPartners.map((partner) => <tr key={partner.name} className={`clickable-agent-row${selectedAgent === partner.name ? ' selected' : ''}`} onClick={() => openAgent(partner.name)}><td><button className="agent-name-link" onClick={() => openAgent(partner.name)}>{partner.name} <span>View →</span></button><small className="role-row-label">Growth Partner</small></td><td>{partner.territory}</td><td>{partner.agent || '—'}</td><td><ProgressValue actual={partner.onboarding} target={onboardingTarget} color="green" comparison={mode==='compare'?comparisonFor(partner.name,raw.onboarding):undefined} /></td><td><ProgressValue actual={partner.devfin} target={gpDevfinTarget} color="amber" comparison={mode==='compare'?comparisonFor(partner.name,raw.devfin):undefined} /></td><td><ProgressValue actual={partner.devpro} target={gpDevproTarget} color="purple" comparison={mode==='compare'?comparisonFor(partner.name,raw.devpro):undefined} /></td></tr>)}
       </tbody></table></div>
     </section>
 
     <section className="agent-category-section">
       <div className="agent-category-head"><div><span className="category-icon sa">SA</span><div><h2>Sales Agents</h2><p>Live engagements, DEVFIN, DEVPRO and attendance records</p></div></div><div className="weekly-rule"><strong>{elapsedThisWeek}/6 working days elapsed this week</strong></div></div>
       <div className="role-table-wrap category-table"><table><thead><tr><th>Sales Agent</th><th>Supervisor</th><th>Assigned stores</th><th>Engagements MTD</th><th>DEVFIN MTD</th><th>DEVPRO MTD</th><th>Weekly attendance</th></tr></thead><tbody>
-        {salesAgents.map((agent) => <tr key={agent.name} className={`clickable-agent-row${selectedAgent === agent.name ? ' selected' : ''}`} onClick={() => setSelectedAgent(agent.name)}><td><button className="agent-name-link" onClick={() => setSelectedAgent(agent.name)}>{agent.name} <span>View →</span></button><small className="role-row-label">Sales Agent · {agent.territory}</small></td><td>{agent.supervisor}</td><td>{agent.stores}</td><td><ProgressValue actual={agent.engagements} target={engagementTarget} color="green" /></td><td><ProgressValue actual={agent.devfin} target={agentDevfinTarget} color="amber" comparison={mode==='compare'?comparisonFor(agent.name,raw.devfin):undefined} /></td><td><ProgressValue actual={agent.devpro} target={agentDevproTarget} color="purple" comparison={mode==='compare'?comparisonFor(agent.name,raw.devpro):undefined} /></td><td><div className="attendance-percentage"><strong>—</strong><span>Open agent to view live attendance</span><small>No preview data</small></div></td></tr>)}
+        {salesAgents.map((agent) => <tr key={agent.name} className={`clickable-agent-row${selectedAgent === agent.name ? ' selected' : ''}`} onClick={() => openAgent(agent.name)}><td><button className="agent-name-link" onClick={() => openAgent(agent.name)}>{agent.name} <span>View →</span></button><small className="role-row-label">Sales Agent · {agent.territory}</small></td><td>{agent.supervisor}</td><td>{agent.stores}</td><td><ProgressValue actual={agent.engagements} target={engagementTarget} color="green" /></td><td><ProgressValue actual={agent.devfin} target={agentDevfinTarget} color="amber" comparison={mode==='compare'?comparisonFor(agent.name,raw.devfin):undefined} /></td><td><ProgressValue actual={agent.devpro} target={agentDevproTarget} color="purple" comparison={mode==='compare'?comparisonFor(agent.name,raw.devpro):undefined} /></td><td><div className="attendance-percentage"><strong>—</strong><span>Open agent to view live attendance</span><small>No preview data</small></div></td></tr>)}
       </tbody></table></div>
     </section>
 
-    {selectedAgent && <AgentPerformanceDetail agentName={selectedAgent} onClose={() => setSelectedAgent(null)} range={range} periodLabel={mode==='range'?`${fromDate} → ${toDate}`:monthLabel} targets={{ devfin: agentDevfinTarget, devpro: agentDevproTarget, engagements: engagementTarget }} />}
+    {selectedAgent && <div ref={detailRef}><AgentPerformanceDetail agentName={selectedAgent} onClose={() => setSelectedAgent(null)} range={range} comparisonRange={mode==='compare'?comparisonRange:null} periodLabel={mode==='range'?`${fromDate} → ${toDate}`:monthLabel} comparisonLabel={comparisonLabel} targets={selectedIsGrowthPartner?{devfin:gpDevfinTarget,devpro:gpDevproTarget,engagements:onboardingTarget}:{devfin:agentDevfinTarget,devpro:agentDevproTarget,engagements:engagementTarget}} /></div>}
     <div className="attendance-formula-note"><strong>Weekly attendance formula:</strong> Present or Late days ÷ elapsed eligible Monday–Saturday working days × 100. Future days are not included. Example: 4 attended days on the fourth working day = 4 ÷ 4 = 100%.</div>
     <div className="footer">Admin People Performance &bull; Role-separated KPIs &bull; Weekly attendance + selectable MTD</div>
   </div>;

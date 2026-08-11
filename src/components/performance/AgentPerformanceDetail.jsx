@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useData } from '../../context/DataContext';
-import { SALES_AGENT_PORTFOLIOS } from '../../config/accessControl';
+import { SALES_AGENT_PORTFOLIOS, SUPERVISOR_PORTFOLIOS } from '../../config/accessControl';
+import { getAssignedStoreRecords } from '../../config/storeAllocations';
 import { agentId, rowAgent } from '../../config/agentIdentity';
 import { AUGUST_2026_INDIVIDUAL_TARGETS } from '../../config/kpiTargets';
 import { auth } from '../../lib/firebase';
@@ -48,7 +49,7 @@ function Kpi({ label, actual, target, tone }) {
   return <div className={`agent-kpi ${tone || ''}`}><span>{label}</span><strong>{actual}</strong><small>{target ? `${achievement}% of ${target} monthly target` : 'No target configured'}</small><div><i style={{ width: `${Math.min(achievement, 100)}%` }} /></div></div>;
 }
 
-export default function AgentPerformanceDetail({ agentName, onClose, compact = false, range, periodLabel, targets }) {
+export default function AgentPerformanceDetail({ agentName, onClose, compact = false, range, comparisonRange, periodLabel, comparisonLabel, targets }) {
   const { raw } = useData();
   const [attendanceHistory, setAttendanceHistory] = useState(null);
   useEffect(() => {
@@ -74,6 +75,7 @@ export default function AgentPerformanceDetail({ agentName, onClose, compact = f
         'GPS Accuracy': row.clockInAccuracy,
         'Geofence Status': row.insideClockIn ? 'Inside geofence' : 'Outside geofence',
         Coordinates: row.clockInCoordinates,
+        'Clocked In After Cutoff': row.clockedInAfterCutoff,
         'Exception Reason': row.exceptionReason,
       })));
     };
@@ -81,7 +83,9 @@ export default function AgentPerformanceDetail({ agentName, onClose, compact = f
     return () => { active = false; };
   }, [agentName]);
   const report = useMemo(() => {
-    const portfolio = SALES_AGENT_PORTFOLIOS.find((item) => clean(item.name) === clean(agentName));
+    const salesPortfolio = SALES_AGENT_PORTFOLIOS.find((item) => clean(item.name) === clean(agentName));
+    const growthPortfolio = SUPERVISOR_PORTFOLIOS.find((item) => clean(item.name) === clean(agentName));
+    const portfolio = salesPortfolio || growthPortfolio;
     const selected = (row) => {
       if (!range) return isMtd(row);
       const date = parseDate(row);
@@ -91,6 +95,10 @@ export default function AgentPerformanceDetail({ agentName, onClose, compact = f
     const daily = raw.daily.filter((row) => owns(row, agentName) && selected(row));
     const devfin = raw.devfin.filter((row) => owns(row, agentName) && selected(row));
     const devpro = raw.devpro.filter((row) => owns(row, agentName) && selected(row));
+    const compare = (source) => comparisonRange ? source.filter((row) => {
+      const date=parseDate(row);
+      return owns(row,agentName)&&date&&date>=comparisonRange.start&&date<=comparisonRange.end;
+    }).length : null;
     const workingDays = eligibleDaysInMonth();
     const reportingDays = new Set(daily.map(dateKey).filter(Boolean)).size;
     return {
@@ -99,6 +107,9 @@ export default function AgentPerformanceDetail({ agentName, onClose, compact = f
       daily,
       devfin,
       devpro,
+      assignedStores: getAssignedStoreRecords(agentName),
+      role: salesPortfolio ? 'Sales Agent' : growthPortfolio ? 'Growth Partner' : 'Field team',
+      comparison: comparisonRange ? { onboarding:compare(raw.onboarding),devfin:compare(raw.devfin),devpro:compare(raw.devpro) } : null,
       reportingDays,
       engagements: countEngagements(daily),
       targets: {
@@ -107,7 +118,7 @@ export default function AgentPerformanceDetail({ agentName, onClose, compact = f
         devpro: targets?.devpro ?? AUGUST_2026_INDIVIDUAL_TARGETS.devpro,
       },
     };
-  }, [agentName, raw, range?.start?.getTime(), range?.end?.getTime(), targets?.engagements, targets?.devfin, targets?.devpro]);
+  }, [agentName, raw, range?.start?.getTime(), range?.end?.getTime(), comparisonRange?.start?.getTime(), comparisonRange?.end?.getTime(), targets?.engagements, targets?.devfin, targets?.devpro]);
 
   const liveLogs = [...report.daily].sort((a, b) => (parseDate(b)?.getTime() || 0) - (parseDate(a)?.getTime() || 0));
   const hasScopedAttendance = Array.isArray(attendanceHistory);
@@ -122,7 +133,7 @@ export default function AgentPerformanceDetail({ agentName, onClose, compact = f
   return (
     <section className={`agent-drilldown${compact ? ' compact' : ''}`}>
       <div className="agent-drilldown-head">
-        <div><div className="role-eyebrow">{periodLabel || 'Month-to-date performance'}</div><h2>{agentName}</h2><p>{report.portfolio?.territory || 'Territory not assigned'} · Supervisor: <strong>{report.portfolio?.supervisor || 'Not assigned'}</strong></p></div>
+        <div><div className="role-eyebrow">{periodLabel || 'Month-to-date performance'}</div><h2>{agentName}</h2><p>{report.role} · {report.portfolio?.territory || 'Territory not assigned'}{report.portfolio?.supervisor ? <> · Supervisor: <strong>{report.portfolio.supervisor}</strong></> : ''}</p></div>
         {onClose && <button className="detail-close" onClick={onClose}>Close ×</button>}
       </div>
       <div className="agent-profile-strip">
@@ -136,6 +147,15 @@ export default function AgentPerformanceDetail({ agentName, onClose, compact = f
         <Kpi label="DEVFIN" actual={report.devfin.length} target={report.targets.devfin} tone="amber" />
         <Kpi label="DEVPRO" actual={report.devpro.length} target={report.targets.devpro} tone="purple" />
       </div>
+      {report.comparison && <div className="attendance-formula-note"><strong>{comparisonLabel || 'Comparison month'}:</strong> {report.comparison.onboarding} stores onboarded · {report.comparison.devfin} DEVFIN · {report.comparison.devpro} DEVPRO. Current-period change: {report.onboarding.length-report.comparison.onboarding>=0?'+':''}{report.onboarding.length-report.comparison.onboarding} onboarding, {report.devfin.length-report.comparison.devfin>=0?'+':''}{report.devfin.length-report.comparison.devfin} DEVFIN, {report.devpro.length-report.comparison.devpro>=0?'+':''}{report.devpro.length-report.comparison.devpro} DEVPRO.</div>}
+      <div className="role-panel">
+        <div className="role-panel-head"><div><h2>Allocated stores</h2><p>Operational assignment is separate from original onboarding ownership.</p></div><strong className="panel-stat">{report.assignedStores.length} stores</strong></div>
+        <div className="role-table-wrap"><table><thead><tr><th>Store</th><th>Address</th><th>Territory</th><th>Original onboarder</th></tr></thead><tbody>{report.assignedStores.length?report.assignedStores.map((store)=><tr key={`${store.id}-${agentName}`}><td><strong>{store.name}</strong></td><td>{store.address||'—'}</td><td>{store.territory||'—'}</td><td>{store.originalOnboarder||'—'}</td></tr>):<tr><td colSpan="4" className="empty-detail">No operational stores are allocated to this person yet.</td></tr>}</tbody></table></div>
+      </div>
+      <div className="role-panel">
+        <div className="role-panel-head"><div><h2>Store onboarding log</h2><p>Stores originally attributed to {agentName} during the selected period.</p></div><strong className="panel-stat">{report.onboarding.length}</strong></div>
+        <div className="role-table-wrap"><table><thead><tr><th>Date</th><th>Store</th><th>Address</th><th>Zone</th><th>Readiness</th></tr></thead><tbody>{report.onboarding.length?[...report.onboarding].sort((a,b)=>(parseDate(b)?.getTime()||0)-(parseDate(a)?.getTime()||0)).map((row,index)=><tr key={`${dateKey(row)}-${row._storeId||index}`}><td><strong>{displayDate(row)}</strong></td><td>{row._storeName||row['Merchant Business Name']||row['Store Name']||'—'}</td><td>{row['Store Address']||'—'}</td><td>{row['Assigned Zone']||'—'}</td><td>{row['Merchant Readiness Level']||'—'}</td></tr>):<tr><td colSpan="5" className="empty-detail">No stores were onboarded by this person in the selected period.</td></tr>}</tbody></table></div>
+      </div>
       <div className="role-panel">
         <div className="role-panel-head"><div><h2>Sales performance log</h2><p>Live DEVFIN and DEVPRO records attributed to {agentName}.</p></div></div>
         <div className="role-table-wrap"><table><thead><tr><th>Date</th><th>Product</th><th>Store</th><th>Location</th><th>Device</th><th>Value</th></tr></thead><tbody>
@@ -148,7 +168,7 @@ export default function AgentPerformanceDetail({ agentName, onClose, compact = f
           {logs.length ? logs.slice(0, 12).map((row, index) => {
             const status = row['Attendance Status'] || 'Reported';
             const outside = row['Geofence Status'] === 'Outside geofence';
-            return <tr key={`${dateKey(row)}-${index}`}><td><strong>{displayDate(row)}</strong>{row['Exception Reason'] ? <small className="log-note">{row['Exception Reason']}</small> : null}</td><td><span className={`attendance-status ${status.toLowerCase().replaceAll(' ', '-')}`}>{status}</span></td><td>{row['Attendance Store'] || 'Assigned store'}</td><td>{displayTime(row['Clock-In Time'])}</td><td>{displayTime(row['Clock-Out Time'])}</td><td>{row['Distance'] != null ? `${row['Distance']}m` : '—'}</td><td>{row['GPS Accuracy'] != null ? `±${row['GPS Accuracy']}m` : '—'}</td><td><span className={`location-result ${outside ? 'outside' : 'inside'}`}>{row['Geofence Status'] || 'Not captured'}</span>{row.Coordinates && <small className="coordinates">{row.Coordinates}</small>}</td><td>{Number(row['Customer Engagements']) || Number(row['Total Merchants Visited Today']) || 0}</td></tr>;
+            return <tr key={`${dateKey(row)}-${index}`}><td><strong>{displayDate(row)}</strong>{row['Exception Reason'] ? <small className="log-note">{row['Exception Reason']}</small> : null}</td><td><span className={`attendance-status ${status.toLowerCase().replaceAll(' ', '-')}`}>{status}</span>{row['Clocked In After Cutoff']&&<small className="log-note">Clocked in after cutoff</small>}</td><td>{row['Attendance Store'] || 'Assigned store'}</td><td>{displayTime(row['Clock-In Time'])}</td><td>{displayTime(row['Clock-Out Time'])}</td><td>{row['Distance'] != null ? `${row['Distance']}m` : '—'}</td><td>{row['GPS Accuracy'] != null ? `±${row['GPS Accuracy']}m` : '—'}</td><td><span className={`location-result ${outside ? 'outside' : 'inside'}`}>{row['Geofence Status'] || 'Not captured'}</span>{row.Coordinates && <small className="coordinates">{row.Coordinates}</small>}</td><td>{Number(row['Customer Engagements']) || Number(row['Total Merchants Visited Today']) || 0}</td></tr>;
           }) : <tr><td colSpan="9" className="empty-detail">No attendance records found for this agent.</td></tr>}
         </tbody></table></div>
       </div>

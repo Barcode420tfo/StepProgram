@@ -3,6 +3,7 @@ const BASE_ID = process.env.AIRTABLE_BASE_ID;
 const TABLE = process.env.AIRTABLE_ATTENDANCE_TABLE_NAME || 'Attendance';
 const FIREBASE_API_KEY = process.env.VITE_FIREBASE_API_KEY || process.env.FIREBASE_WEB_API_KEY;
 const TIME_ZONE = 'Africa/Lagos';
+const MINIMUM_SHIFT_MINUTES = 5 * 60;
 
 const USERS = Object.freeze({
   vJMImsYZeWThRPQmERfnFct0FVL2: {
@@ -114,7 +115,7 @@ async function authenticate(event) {
   return { uid: firebaseUser.localId, ...user };
 }
 async function findToday(uid, date) {
-  const formula = `AND({Agent UID}='${uid}',{Attendance Date}='${date}')`;
+  const formula = `AND({Agent UID}='${uid}',DATETIME_FORMAT(SET_TIMEZONE({Attendance Date},'Africa/Lagos'),'YYYY-MM-DD')='${date}')`;
   const response = await fetch(`${airtableUrl()}?maxRecords=1&filterByFormula=${encodeURIComponent(formula)}`, { headers: airtableHeaders() });
   const data = await response.json();
   if (!response.ok) throw new Error(data.error?.message || 'Could not read attendance table.');
@@ -150,7 +151,10 @@ function output(record) {
   const clockInLongitude=f['Clock in Longitude'];
   const clockOutLatitude=f['Clock Out Latitude'];
   const clockOutLongitude=f['Clock Out Longitude'];
-  return { id:record.id,agentName:f['Agent Name'],date:f['Attendance Date'],store:f['Attendance Store'],clockIn:f['Clock In Time']||null,clockOut:f['Clock Out Time']||null,status:f['Attendance Status']||'Pending',clockInLatitude,clockInLongitude,clockInCoordinates:Number.isFinite(Number(clockInLatitude))&&Number.isFinite(Number(clockInLongitude))?`${clockInLatitude}, ${clockInLongitude}`:null,clockInDistance:f['Clock In Distance'],clockInAccuracy:f['Clock In Accuracy'],insideClockIn:Number(f['Clock In Distance'])<=100,clockOutLatitude,clockOutLongitude,clockOutCoordinates:Number.isFinite(Number(clockOutLatitude))&&Number.isFinite(Number(clockOutLongitude))?`${clockOutLatitude}, ${clockOutLongitude}`:null,clockOutDistance:f['Clock Out Distance'],clockOutAccuracy:f['Clock Out Accuracy'],workingMinutes:f['Working Minutes'],exceptionReason:f['Exception Reason']||'' };
+  const clockIn=f['Clock In Time']||null;
+  const status=f['Attendance Status']||'Pending';
+  const attendanceDate=f['Attendance Date']?localDate(new Date(f['Attendance Date'])):null;
+  return { id:record.id,agentName:f['Agent Name'],date:attendanceDate,store:f['Attendance Store'],clockIn,clockOut:f['Clock Out Time']||null,clockOutAvailableAt:clockIn?new Date(new Date(clockIn).getTime()+MINIMUM_SHIFT_MINUTES*60000).toISOString():null,status,clockedInAfterCutoff:Boolean(clockIn&&status==='Absent'),clockInLatitude,clockInLongitude,clockInCoordinates:Number.isFinite(Number(clockInLatitude))&&Number.isFinite(Number(clockInLongitude))?`${clockInLatitude}, ${clockInLongitude}`:null,clockInDistance:f['Clock In Distance'],clockInAccuracy:f['Clock In Accuracy'],insideClockIn:Number(f['Clock In Distance'])<=100,clockOutLatitude,clockOutLongitude,clockOutCoordinates:Number.isFinite(Number(clockOutLatitude))&&Number.isFinite(Number(clockOutLongitude))?`${clockOutLatitude}, ${clockOutLongitude}`:null,clockOutDistance:f['Clock Out Distance'],clockOutAccuracy:f['Clock Out Accuracy'],workingMinutes:f['Working Minutes'],exceptionReason:f['Exception Reason']||'' };
 }
 
 export async function handler(event) {
@@ -186,6 +190,8 @@ export async function handler(event) {
     if(action==='clock_out') {
       if(!existing?.fields?.['Clock In Time']) return json(409,{error:'No active clock-in was found for today.'});
       if(existing.fields['Clock Out Time']) return json(409,{error:'You have already clocked out today.',attendance:output(existing)});
+      const earliestClockOut=new Date(new Date(existing.fields['Clock In Time']).getTime()+MINIMUM_SHIFT_MINUTES*60000);
+      if(now<earliestClockOut) return json(422,{error:`Clock-out becomes available five hours after clock-in, at ${earliestClockOut.toLocaleTimeString('en-NG',{hour:'2-digit',minute:'2-digit',timeZone:TIME_ZONE})}.`,clockOutAvailableAt:earliestClockOut.toISOString(),attendance:output(existing)});
       if(!inside&&!String(body.exceptionReason||'').trim()) return json(422,{error:'Clock-out outside the 100m geofence requires an exception reason.',requiresReason:true,distance:metres});
       const started=new Date(existing.fields['Clock In Time']); const workingMinutes=Math.max(0,Math.round((now-started)/60000)); const fields={'Clock Out Time':now.toISOString(),'Clock Out Latitude':latitude,'Clock Out Longitude':longitude,'Clock Out Accuracy':Math.round(accuracy),'Clock Out Distance':metres,'Working Minutes':workingMinutes,'Exception Reason':String(body.exceptionReason||''),'Updated At':now.toISOString()};
       const response=await fetch(airtableUrl(existing.id),{method:'PATCH',headers:airtableHeaders(),body:JSON.stringify({fields,typecast:true})}); const data=await response.json(); if(!response.ok) throw new Error(data.error?.message||'Could not save clock-out.'); return json(200,{ok:true,attendance:output(data),serverTime:now.toISOString()});
