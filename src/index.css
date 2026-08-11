@@ -341,6 +341,7 @@ tr:hover td{background:#fafbfc;}
 .fatal-error-card h1{margin:0 0 10px;font-size:22px;line-height:1.25;}
 .fatal-error-card p{margin:0 0 20px;color:#5f6368;line-height:1.55;}
 .fatal-error-card button{border:0;border-radius:8px;padding:12px 18px;background:#1677e8;color:#fff;font:inherit;font-weight:700;cursor:pointer;}
+.fatal-error-card button:disabled{opacity:.65;cursor:wait}.fatal-error-details{margin:-8px 0 18px;text-align:left;border:1px solid #e3e7ee;border-radius:8px;padding:9px 11px;background:#f8f9fb}.fatal-error-details summary{cursor:pointer;font-size:12px;font-weight:700;color:#5f6368}.fatal-error-details code{display:block;margin-top:8px;white-space:normal;overflow-wrap:anywhere;font-size:11px;line-height:1.45;color:#b3261e}
 
 /* TOASTS */
 .toast-container{position:fixed;bottom:20px;right:20px;z-index:9999;
