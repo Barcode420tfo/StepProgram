@@ -141,7 +141,7 @@ export const SUPERVISOR_PORTFOLIOS = Object.freeze([
   { name: 'Chile Nwaiwu', territory: 'Lawanson Phone Village', agent: 'Ifeoma', stores: 69 },
   { name: 'Mohammed', territory: 'UNILAG / Akoka', agent: null, stores: 30 },
   { name: 'Sarah', territory: 'Sango', agent: null, stores: 29 },
-  { name: 'Esther', territory: 'Ikorodu', agent: null, stores: 18 },
+  { name: 'Esther', territory: 'Ikorodu', agent: null, stores: 22 },
 ]);
 
 export const CLUSTER_SUPERVISOR_PORTFOLIOS = Object.freeze([
@@ -149,7 +149,7 @@ export const CLUSTER_SUPERVISOR_PORTFOLIOS = Object.freeze([
 ]);
 
 export const SALES_AGENT_PORTFOLIOS = Object.freeze([
-  { name: 'Peace', territory: 'Computer Village', supervisor: 'Jessica', stores: 0 },
+  { name: 'Peace', territory: 'Computer Village', supervisor: 'Jessica', stores: 15 },
   { name: 'Queen', territory: 'Computer Village', supervisor: 'Towobola', stores: 14 },
   { name: 'Ifeoma', territory: 'Lawanson Phone Village', supervisor: 'Chile Nwaiwu', stores: 18 },
 ]);

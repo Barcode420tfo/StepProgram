@@ -105,7 +105,7 @@ function GrowthPartnerHome() {
           <PerformanceLine label="Cluster DEVPRO" actual={personalDevpro} target={soloClusterTarget.devpro} />
         </section> : null}
       </div>
-      {hasAssignedAgent && <SupervisorStoreAccess supervisorName={portfolio?.name} agentName={agent} territory={portfolio?.territory} />}
+      <SupervisorStoreAccess supervisorName={portfolio?.name} agentName={hasAssignedAgent ? agent : null} territory={portfolio?.territory} />
       {hasAssignedAgent && <SupervisorSalesOverview supervisorName={portfolio?.name} agentName={agent} territory={portfolio?.territory} />}
       {hasAssignedAgent && <AgentPerformanceDetail agentName={agent} compact />}
     </div>

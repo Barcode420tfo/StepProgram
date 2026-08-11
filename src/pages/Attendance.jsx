@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
 import { auth } from '../lib/firebase';
 
 const PEOPLE = Object.freeze([
@@ -41,6 +41,7 @@ export default function Attendance() {
   const [agent,setAgent]=useState('all');
   const [cluster,setCluster]=useState('all');
   const [selected,setSelected]=useState('');
+  const drilldownRef=useRef(null);
 
   const load=async()=>{
     setLoading(true);setError('');
@@ -54,6 +55,11 @@ export default function Attendance() {
     }catch(requestError){setError(requestError.message);}finally{setLoading(false);}
   };
   useEffect(()=>{load();},[]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(()=>{
+    if(!selected||!drilldownRef.current)return;
+    const frame=window.requestAnimationFrame(()=>drilldownRef.current?.scrollIntoView({behavior:'smooth',block:'start'}));
+    return()=>window.cancelAnimationFrame(frame);
+  },[selected]);
 
   const analysis=useMemo(()=>{
     const dates=scheduledDates(month);
@@ -87,11 +93,11 @@ export default function Attendance() {
     {error&&<div className="status err">{error}</div>}
     <div className="executive-metrics"><Metric label="Attendance" value={`${percent(totals.present,totals.expected)}%`} note={`${totals.present}/${totals.expected} expected agent-days`}/><Metric label="Present/attended" value={totals.present} note="Includes late arrivals"/><Metric label="Late arrivals" value={totals.late} note="Late and Very Late"/><Metric label="Absent" value={totals.absent} note="Absent status or missing clock-in"/></div>
     <section className="role-panel people-analytics"><div className="role-panel-head"><div><h2>Weekly attendance by agent</h2><p>Monday–Saturday. The current week uses elapsed workdays; six attended days equals 100% for a completed week.</p></div></div><div className="role-table-wrap"><table><thead><tr><th>Agent</th><th>Cluster</th><th>Role</th><th>MTD attendance</th><th>Weekly percentages</th><th>Late</th><th>Absent</th><th>Analysis</th></tr></thead><tbody>{analysis.rows.map((row)=><tr key={row.name}><td><strong>{row.name}</strong></td><td>{row.cluster}</td><td>{row.role}</td><td><AttendanceRate value={row.pct} note={`${row.present}/${row.expected} days`}/></td><td><div className="attendance-week-list">{row.weeks.map((week)=><span key={week.weekStart}><small>{dateLabel(week.weekStart)}</small><strong>{week.pct}%</strong><i>{week.present}/{week.expected}</i></span>)}</div></td><td>{row.late}</td><td>{row.absent}</td><td><button className="agent-name-link" onClick={()=>setSelected(row.name)}>Drill down →</button></td></tr>)}</tbody></table></div></section>
-    {chosen&&<AgentDrilldown row={chosen} dates={analysis.dates} onClose={()=>setSelected('')}/>} 
+    {chosen&&<AgentDrilldown ref={drilldownRef} row={chosen} dates={analysis.dates} onClose={()=>setSelected('')}/>}
     <section className="role-panel people-analytics"><div className="role-panel-head"><div><h2>Daily clock-in log</h2><p>Server timestamps and verified attendance-store evidence from Airtable.</p></div><strong className="panel-stat">{analysis.logs.length} records</strong></div><div className="role-table-wrap"><table><thead><tr><th>Date</th><th>Agent</th><th>Cluster</th><th>Store</th><th>Clock in</th><th>Status</th><th>Clock out</th><th>Distance</th><th>Accuracy</th></tr></thead><tbody>{analysis.logs.length?analysis.logs.map((row)=><tr key={row.id}><td><strong>{dateLabel(row.date)}</strong></td><td>{row.agentName}</td><td>{PEOPLE.find((person)=>person.name===row.agentName)?.cluster||'—'}</td><td>{row.store||'—'}</td><td>{timeLabel(row.clockIn)}</td><td><span className={`attendance-status ${statusClass(row.status)}`}>{row.status}</span></td><td>{timeLabel(row.clockOut)}</td><td>{row.clockInDistance!=null?`${row.clockInDistance}m`:'—'}</td><td>{row.clockInAccuracy!=null?`±${row.clockInAccuracy}m`:'—'}</td></tr>):<tr><td colSpan="9" className="empty-detail">{loading?'Loading attendance…':'No attendance records match this period.'}</td></tr>}</tbody></table></div></section>
   </div>;
 }
 
 function Metric({label,value,note}){return <div className="executive-metric"><span>{label}</span><strong>{value}</strong><small>{note}</small></div>;}
 function AttendanceRate({value,note}){return <div className="attendance-percentage"><strong>{value}%</strong><span>{note}</span><div><i style={{width:`${value}%`}}/></div></div>;}
-function AgentDrilldown({row,dates,onClose}){return <section className="agent-drilldown"><div className="agent-drilldown-head"><div><div className="role-eyebrow">Attendance drill-down</div><h2>{row.name}</h2><p>{row.cluster} · {row.role}</p></div><button className="detail-close" onClick={onClose}>Close ×</button></div><div className="agent-profile-strip"><div><small>MTD attendance</small><strong>{row.pct}%</strong></div><div><small>Attended</small><strong>{row.present}</strong></div><div><small>Late</small><strong>{row.late}</strong></div><div><small>Absent</small><strong>{row.absent}</strong></div></div><div className="role-table-wrap"><table><thead><tr><th>Date</th><th>Status</th><th>Clock in</th><th>Clock out</th><th>Attendance store</th><th>Location evidence</th></tr></thead><tbody>{[...dates].reverse().map((date)=>{const key=dateKey(date);const record=row.byDate.get(key);const status=record?.status||'Absent';return <tr key={key}><td><strong>{dateLabel(key)}</strong></td><td><span className={`attendance-status ${statusClass(status)}`}>{status}</span></td><td>{timeLabel(record?.clockIn)}</td><td>{timeLabel(record?.clockOut)}</td><td>{record?.store||'No clock-in'}</td><td>{record?`${record.clockInDistance??'—'}m · ±${record.clockInAccuracy??'—'}m`:'Missing attendance record'}</td></tr>;})}</tbody></table></div></section>;}
+const AgentDrilldown=forwardRef(function AgentDrilldown({row,dates,onClose},ref){return <section ref={ref} className="agent-drilldown"><div className="agent-drilldown-head"><div><div className="role-eyebrow">Attendance drill-down</div><h2>{row.name}</h2><p>{row.cluster} · {row.role}</p></div><button className="detail-close" onClick={onClose}>Close ×</button></div><div className="agent-profile-strip"><div><small>MTD attendance</small><strong>{row.pct}%</strong></div><div><small>Attended</small><strong>{row.present}</strong></div><div><small>Late</small><strong>{row.late}</strong></div><div><small>Absent</small><strong>{row.absent}</strong></div></div><div className="role-table-wrap"><table><thead><tr><th>Date</th><th>Status</th><th>Clock in</th><th>Clock out</th><th>Attendance store</th><th>Location evidence</th></tr></thead><tbody>{[...dates].reverse().map((date)=>{const key=dateKey(date);const record=row.byDate.get(key);const status=record?.status||'Absent';return <tr key={key}><td><strong>{dateLabel(key)}</strong></td><td><span className={`attendance-status ${statusClass(status)}`}>{status}</span></td><td>{timeLabel(record?.clockIn)}</td><td>{timeLabel(record?.clockOut)}</td><td>{record?.store||'No clock-in'}</td><td>{record?`${record.clockInDistance??'—'}m · ±${record.clockInAccuracy??'—'}m`:'Missing attendance record'}</td></tr>;})}</tbody></table></div></section>;});
