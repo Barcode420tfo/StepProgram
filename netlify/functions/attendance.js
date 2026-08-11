@@ -127,6 +127,22 @@ async function findAgentHistory(agentName) {
   if (!response.ok) throw new Error(data.error?.message || 'Could not read attendance history.');
   return (data.records || []).sort((a, b) => String(b.fields?.['Attendance Date'] || '').localeCompare(String(a.fields?.['Attendance Date'] || '')));
 }
+async function findAllHistory() {
+  const records=[];
+  let offset='';
+  do {
+    const query=new URLSearchParams({pageSize:'100'});
+    query.append('sort[0][field]','Attendance Date');
+    query.append('sort[0][direction]','desc');
+    if(offset) query.set('offset',offset);
+    const response=await fetch(`${airtableUrl()}?${query}`,{headers:airtableHeaders()});
+    const data=await response.json();
+    if(!response.ok) throw new Error(data.error?.message||'Could not read attendance history.');
+    records.push(...(data.records||[]));
+    offset=data.offset||'';
+  } while(offset&&records.length<1000);
+  return records;
+}
 function output(record) {
   if (!record) return null;
   const f=record.fields || {};
@@ -147,6 +163,11 @@ export async function handler(event) {
       if(!agentName) return json(400,{error:'Agent name is required.'});
       if(!user.canViewAllAttendance&&user.name!==agentName&&!user.supervisedAgents?.includes(agentName)) return json(403,{error:'You are not authorized to view this agent attendance history.'});
       const records=await findAgentHistory(agentName);
+      return json(200,{ok:true,attendance:records.map(output),serverTime:now.toISOString()});
+    }
+    if(action==='all_history') {
+      if(!user.canViewAllAttendance) return json(403,{error:'Super Admin attendance access is required.'});
+      const records=await findAllHistory();
       return json(200,{ok:true,attendance:records.map(output),serverTime:now.toISOString()});
     }
     if(!Number.isFinite(user.latitude)||!Number.isFinite(user.longitude)||!Number.isFinite(user.radius)) return json(403,{error:'This account does not have a personal attendance location.'});

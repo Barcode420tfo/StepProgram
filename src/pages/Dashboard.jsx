@@ -10,13 +10,14 @@ import StorePerformance from './StorePerformance';
 import DevproReport from './DevproReport';
 import RoleHome from './RoleHome';
 import GrowthPartnerPerformance from './GrowthPartnerPerformance';
+import Attendance from './Attendance';
 import { ToastContainer } from '../components/ui/Toast';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { ROLES } from '../config/accessControl';
 
 const ROLE_PAGES = Object.freeze({
-  [ROLES.ADMIN]: ['workspace', 'overview', 'merchants', 'fieldops', 'storeperformance', 'devproreport', 'agents'],
+  [ROLES.ADMIN]: ['workspace', 'overview', 'merchants', 'fieldops', 'storeperformance', 'devproreport', 'agents', 'attendance'],
   [ROLES.GROWTH_PARTNER]: ['workspace', 'overview', 'merchants', 'fieldops', 'storeperformance', 'devproreport', 'performance'],
   [ROLES.SUPERVISOR]: ['workspace', 'overview', 'merchants', 'fieldops', 'storeperformance', 'devproreport'],
   [ROLES.SALES_AGENT]: ['workspace'],
@@ -172,6 +173,7 @@ export default function Dashboard() {
         {safeActivePage === 'storeperformance' && <StorePerformance />}
         {safeActivePage === 'devproreport' && <DevproReport />}
         {safeActivePage === 'agents'      && <Agents />}
+        {safeActivePage === 'attendance'  && <Attendance />}
         {safeActivePage === 'performance' && <GrowthPartnerPerformance />}
       </div>
       <ToastContainer toasts={toasts} onClose={removeToast} />

@@ -1,6 +1,6 @@
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
-import { ROLE_LABELS, ROLES } from '../../config/accessControl';
+import { ROLE_LABELS, ROLES, isSuperAdmin } from '../../config/accessControl';
 
 const PAGES = [
   {
@@ -32,6 +32,10 @@ const PAGES = [
     icon: 'M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z',
   },
   {
+    id: 'attendance', label: 'Attendance', short: 'Attendance', roles: [ROLES.ADMIN],
+    icon: 'M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V9h14v11zm-7-9h5v5h-5z',
+  },
+  {
     id: 'performance', label: 'Performance Preview', short: 'Performance', roles: [ROLES.GROWTH_PARTNER],
     icon: 'M3 17h2v-7H3v7zm4 0h2V7H7v10zm4 0h2v-4h-2v4zm4 0h2V4h-2v13zm4 0h2V9h-2v8z',
   },
@@ -41,7 +45,7 @@ export default function Nav({ activePage, onPageChange, badges = {} }) {
   const { signOut, user, role, profile, previewRole, setPreviewRole, canPreviewRoles } = useAuth();
   const { refresh, isRefreshing } = useData();
   const isRestrictedGrowthPartner = role === ROLES.GROWTH_PARTNER && ['Mohammed', 'Sarah', 'Esther'].includes(profile?.portfolio?.name);
-  const visiblePages = PAGES.filter((page) => page.roles.includes(role) && (!isRestrictedGrowthPartner || page.id === 'workspace') && (page.id !== 'workspace' || role !== ROLES.ADMIN || profile.canViewExecutiveWorkspace || import.meta.env.DEV));
+  const visiblePages = PAGES.filter((page) => page.roles.includes(role) && (page.id !== 'attendance' || isSuperAdmin(user?.uid)) && (!isRestrictedGrowthPartner || page.id === 'workspace') && (page.id !== 'workspace' || role !== ROLES.ADMIN || profile.canViewExecutiveWorkspace || import.meta.env.DEV));
 
   return (
     <>
