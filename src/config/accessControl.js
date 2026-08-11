@@ -151,7 +151,7 @@ export const CLUSTER_SUPERVISOR_PORTFOLIOS = Object.freeze([
 export const SALES_AGENT_PORTFOLIOS = Object.freeze([
   { name: 'Peace', territory: 'Computer Village', supervisor: 'Jessica', stores: 0 },
   { name: 'Queen', territory: 'Computer Village', supervisor: 'Towobola', stores: 14 },
-  { name: 'Ifeoma', territory: 'Lawanson Phone Village', supervisor: 'Chile Nwaiwu', stores: 0 },
+  { name: 'Ifeoma', territory: 'Lawanson Phone Village', supervisor: 'Chile Nwaiwu', stores: 18 },
 ]);
 
 export function normalizeRole(value) {
