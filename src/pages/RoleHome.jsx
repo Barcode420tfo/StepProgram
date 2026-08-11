@@ -6,6 +6,7 @@ import SupervisorStoreAccess from '../components/performance/SupervisorStoreAcce
 import AgentPerformanceDetail from '../components/performance/AgentPerformanceDetail';
 import SupervisorSalesOverview from '../components/performance/SupervisorSalesOverview';
 import GrowthPartnerAttendance from '../components/performance/GrowthPartnerAttendance';
+import AssignedStoreList from '../components/performance/AssignedStoreList';
 import AdminAnalytics from './AdminAnalytics';
 import { AUGUST_2026_CLUSTER_TARGETS, AUGUST_2026_INDIVIDUAL_TARGETS } from '../config/kpiTargets';
 import { agentId, rowAgent } from '../config/agentIdentity';
@@ -151,6 +152,7 @@ function SalesAgentHome() {
         </tbody></table></div>
         <div className="scope-note">Combined cluster performance includes every listed Growth Partner and Sales Agent. Transaction-level records remain private to the individual owner.</div>
       </section>}
+      <AssignedStoreList agentName={name} title="My assigned stores" />
       <AgentPerformanceDetail agentName={name === 'Sales Agent' ? 'Peace' : name} compact targets={{ engagements: AUGUST_2026_INDIVIDUAL_TARGETS.onboarding, devfin: AUGUST_2026_INDIVIDUAL_TARGETS.devfin, devpro: AUGUST_2026_INDIVIDUAL_TARGETS.devpro }} />
     </div>
   );

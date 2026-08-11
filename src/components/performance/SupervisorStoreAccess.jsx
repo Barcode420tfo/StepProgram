@@ -13,7 +13,9 @@ export default function SupervisorStoreAccess({ supervisorName, agentName, terri
   const supervised = useMemo(() => getAssignedStoreRecords(agentName), [agentName]);
   const personal = useMemo(() => {
     const assignmentByName = new Map(getAllAssignedStoreRecords().map((store) => [normalizeStoreKey(store.name), store]));
-    const byName = new Map();
+    // A Growth Partner can see both stores originally onboarded by them and
+    // stores currently assigned directly to them, without changing ownership.
+    const byName = new Map(getAssignedStoreRecords(supervisorName).map((store) => [normalizeStoreKey(store.name), store]));
     raw.onboarding
       .filter((row) => rowAgent(row)?.id === agentId(supervisorName))
       .forEach((row) => {
@@ -38,7 +40,7 @@ export default function SupervisorStoreAccess({ supervisorName, agentName, terri
   return <section className="role-panel supervisor-store-access">
     <div className="role-panel-head"><div><h2>Store access and ownership</h2><p>Current supervision remains separate from original onboarding credit.</p></div><span className="store-total-badge">{source.length} stores</span></div>
     <div className="store-access-controls">
-      <div className="section-tabs">{agentName && <button className={view === 'supervised' ? 'active' : ''} onClick={() => setView('supervised')}>Supervised portfolio ({supervised.length})</button>}<button className={view === 'personal' ? 'active' : ''} onClick={() => setView('personal')}>Personally onboarded ({personal.length})</button></div>
+      <div className="section-tabs">{agentName && <button className={view === 'supervised' ? 'active' : ''} onClick={() => setView('supervised')}>Supervised portfolio ({supervised.length})</button>}<button className={view === 'personal' ? 'active' : ''} onClick={() => setView('personal')}>Owned + directly assigned ({personal.length})</button></div>
       <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search stores or owners…" />
     </div>
     <div className="role-table-wrap supervisor-store-table"><table><thead><tr><th>Store</th><th>Territory</th><th>Original onboarder</th><th>Assigned Sales Agent</th><th>Current supervisor</th></tr></thead><tbody>
