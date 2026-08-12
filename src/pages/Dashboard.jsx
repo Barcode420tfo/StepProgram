@@ -60,14 +60,32 @@ function WelcomeBanner({ user, onGoAcquisitions, onDismiss }) {
 
 // Request browser notification permission once
 async function requestBrowserNotifPermission() {
-  if ('Notification' in window && Notification.permission === 'default') {
-    await Notification.requestPermission();
+  try {
+    if ('Notification' in window && Notification.permission === 'default') {
+      await Notification.requestPermission();
+    }
+  } catch (error) {
+    // Notifications are an optional enhancement. Some Android browsers expose
+    // the API but require service-worker notifications and reject page usage.
+    console.warn('Browser notifications are unavailable on this device.', error);
   }
 }
 
-function sendBrowserNotif(title, body) {
-  if ('Notification' in window && Notification.permission === 'granted') {
+async function sendBrowserNotif(title, body) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  try {
+    // Prefer the service-worker API where one already exists. Do not register
+    // a worker solely for notifications—the in-app toast remains authoritative.
+    const registration = 'serviceWorker' in navigator
+      ? await navigator.serviceWorker.getRegistration()
+      : null;
+    if (registration?.showNotification) {
+      await registration.showNotification(title, { body, icon: '/favicon.ico' });
+      return;
+    }
     new Notification(title, { body, icon: '/favicon.ico' });
+  } catch (error) {
+    console.warn('Browser notification skipped; dashboard remains active.', error);
   }
 }
 
@@ -86,7 +104,7 @@ export default function Dashboard() {
   const [toasts, setToasts]                  = useState([]);
 
   // Ask for browser notification permission on mount
-  useEffect(() => { requestBrowserNotifPermission(); }, []);
+  useEffect(() => { requestBrowserNotifPermission().catch(() => {}); }, []);
 
   // Auto-dismiss welcome after 7s
   useEffect(() => {
@@ -109,7 +127,7 @@ export default function Dashboard() {
         duration: 6000,
       });
 
-      sendBrowserNotif('🏪 STEP — New merchant acquisition', message);
+      sendBrowserNotif('🏪 STEP — New merchant acquisition', message).catch(() => {});
     }
 
     newRowDelta.salesUpdates.forEach((update) => {
@@ -124,7 +142,7 @@ export default function Dashboard() {
         duration: 7000,
       });
 
-      sendBrowserNotif(`📈 STEP — New ${update.source} activity`, message);
+      sendBrowserNotif(`📈 STEP — New ${update.source} activity`, message).catch(() => {});
     });
 
     clearNewRowDelta();
