@@ -107,7 +107,16 @@ function localTimeOnDate(date, hour, minute = 0) {
   // Lagos is UTC+1 year-round, so 14:00 local is 13:00 UTC.
   return new Date(Date.UTC(Number(p.year), Number(p.month)-1, Number(p.day), hour-1, minute));
 }
-function attendanceStatus(date) { const p=parts(date); const minutes=Number(p.hour)*60+Number(p.minute); const thursday=p.weekday==='Thu'; const scheduled=thursday?600:540; const veryLate=scheduled+30; const absent=thursday?660:600; if(minutes>=absent)return 'Absent'; if(minutes>veryLate)return 'Very Late'; if(minutes>=scheduled)return 'Late'; return 'Present'; }
+function attendanceStatus(date) {
+  const p=parts(date);
+  const minutes=Number(p.hour)*60+Number(p.minute);
+  const thursday=p.weekday==='Thu';
+  const late=thursday ? 11*60 : 9*60+30;
+  const absent=thursday ? 12*60 : 10*60;
+  if(minutes>=absent) return 'Absent';
+  if(thursday ? minutes>late : minutes>=late) return 'Late';
+  return 'Present';
+}
 function distance(aLat,aLon,bLat,bLon) { const r=6371000; const rad=(v)=>v*Math.PI/180; const dLat=rad(bLat-aLat); const dLon=rad(bLon-aLon); const a=Math.sin(dLat/2)**2+Math.cos(rad(aLat))*Math.cos(rad(bLat))*Math.sin(dLon/2)**2; return Math.round(r*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a))); }
 function hasClockOutEvidence(fields = {}) {
   return fields['Clock Out Latitude'] != null
