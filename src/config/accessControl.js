@@ -67,6 +67,11 @@ export const BOOTSTRAP_USERS = Object.freeze({
     role: ROLES.ADMIN,
     profileName: 'Main Admin',
   }),
+  nCYdpv7DSCTGBgBuPjkV5mNZFqZ2: Object.freeze({
+    email: 'hayjayponping@gmail.com',
+    role: ROLES.ADMIN,
+    profileName: 'Super Admin',
+  }),
   ZJviPrASfzPg95CauDo3ORGlVSt1: Object.freeze({
     email: 'towobolaadefowokan@gmail.com',
     role: ROLES.GROWTH_PARTNER,
@@ -117,10 +122,12 @@ export const BOOTSTRAP_USERS = Object.freeze({
 export const EXECUTIVE_WORKSPACE_UIDS = Object.freeze([
   'FjkbTH9hYQaaqrY1gmDI2Rdmx302',
   'vJMImsYZeWThRPQmERfnFct0FVL2',
+  'nCYdpv7DSCTGBgBuPjkV5mNZFqZ2',
 ]);
 export const SUPER_ADMIN_UIDS = Object.freeze([
   'FjkbTH9hYQaaqrY1gmDI2Rdmx302',
   'vJMImsYZeWThRPQmERfnFct0FVL2',
+  'nCYdpv7DSCTGBgBuPjkV5mNZFqZ2',
 ]);
 
 export function isSuperAdmin(uid) {

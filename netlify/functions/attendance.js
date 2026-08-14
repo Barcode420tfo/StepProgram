@@ -18,6 +18,11 @@ const USERS = Object.freeze({
     email: 'olajide@sapphirevirtual.com',
     canViewAllAttendance: true,
   },
+  nCYdpv7DSCTGBgBuPjkV5mNZFqZ2: {
+    name: 'Super Admin',
+    email: 'hayjayponping@gmail.com',
+    canViewAllAttendance: true,
+  },
   ZJviPrASfzPg95CauDo3ORGlVSt1: {
     name: 'Towobola',
     email: 'towobolaadefowokan@gmail.com',
