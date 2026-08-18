@@ -36,8 +36,11 @@ function percent(actual,expected){return expected?Math.min(100,Math.round(actual
 
 export default function Attendance() {
   const [records,setRecords]=useState([]);
+  const [devices,setDevices]=useState([]);
   const [loading,setLoading]=useState(true);
   const [error,setError]=useState('');
+  const [deviceError,setDeviceError]=useState('');
+  const [reviewingDevice,setReviewingDevice]=useState('');
   const [month,setMonth]=useState(currentMonth);
   const [agent,setAgent]=useState('all');
   const [cluster,setCluster]=useState('all');
@@ -45,15 +48,27 @@ export default function Attendance() {
   const drilldownRef=useRef(null);
 
   const load=async()=>{
-    setLoading(true);setError('');
+    setLoading(true);setError('');setDeviceError('');
     try{
       const token=await auth.currentUser?.getIdToken();
       if(!token) throw new Error('Your Super Admin session is unavailable.');
-      const response=await fetch('/.netlify/functions/attendance',{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify({action:'all_history'})});
-      const data=await response.json().catch(()=>({}));
-      if(!response.ok) throw new Error(data.error||'Attendance records could not be loaded.');
-      setRecords(data.attendance||[]);
+      const request=async(action,payload={})=>{const response=await fetch('/.netlify/functions/attendance',{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify({action,...payload})});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error||'Attendance request failed.');return data;};
+      const attendanceData=await request('all_history');
+      setRecords(attendanceData.attendance||[]);
+      try{const deviceData=await request('all_devices');setDevices(deviceData.devices||[]);}catch(deviceRequestError){setDeviceError(deviceRequestError.message);}
     }catch(requestError){setError(requestError.message);}finally{setLoading(false);}
+  };
+
+  const reviewDevice=async(deviceId,status)=>{
+    setReviewingDevice(deviceId);setDeviceError('');
+    try{
+      const token=await auth.currentUser?.getIdToken();
+      if(!token)throw new Error('Your Super Admin session is unavailable.');
+      const response=await fetch('/.netlify/functions/attendance',{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify({action:'review_device',deviceId,status})});
+      const data=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(data.error||'Phone review failed.');
+      await load();
+    }catch(requestError){setDeviceError(requestError.message);}finally{setReviewingDevice('');}
   };
   useEffect(()=>{load();},[]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(()=>{
@@ -101,12 +116,19 @@ export default function Attendance() {
     <div className="executive-hero"><div><span>Super Admin · Airtable attendance</span><h1>Attendance command centre</h1><p>Daily clock evidence, weekly compliance and month-to-date attendance analysis.</p></div><div><small>Selected cycle</small><strong>{month}</strong><span>{analysis.dates.length} elapsed working days</span></div></div>
     <div className="analytics-controls attendance-controls"><label>Month<input type="month" value={month} onChange={(event)=>setMonth(event.target.value)}/></label><label>Agent<select value={agent} onChange={(event)=>{setAgent(event.target.value);setSelected('');}}><option value="all">All agents</option>{PEOPLE.map((person)=><option key={person.name}>{person.name}</option>)}</select></label><label>Cluster<select value={cluster} onChange={(event)=>{setCluster(event.target.value);setSelected('');}}><option value="all">All clusters</option>{[...new Set(PEOPLE.map((person)=>person.cluster))].map((value)=><option key={value}>{value}</option>)}</select></label><button className="ref-btn attendance-refresh" onClick={load} disabled={loading}>{loading?'Loading…':'Refresh logs'}</button></div>
     {error&&<div className="status err">{error}</div>}
+    {deviceError&&<div className="status err">Phone validation: {deviceError}</div>}
     <div className="executive-metrics"><Metric label="Attendance" value={`${percent(totals.present,totals.expected)}%`} note={`${totals.present}/${totals.expected} expected agent-days`}/><Metric label="Present/attended" value={totals.present} note="Includes late arrivals"/><Metric label="Late arrivals" value={totals.late} note="Late and Very Late"/><Metric label="Absent" value={totals.absent} note="Absent status or missing clock-in"/></div>
+    <DeviceApprovals devices={devices} reviewing={reviewingDevice} onReview={reviewDevice}/>
     <section className="role-panel people-analytics"><div className="role-panel-head"><div><h2>Today’s clock-in snapshot</h2><p>{dateLabel(todayKey)} · Airtable server timestamps in Africa/Lagos time.</p></div><strong className="panel-stat">{todayRows.filter((row)=>row.record?.clockIn).length}/{todayRows.length} clocked in</strong></div><div className="role-table-wrap"><table><thead><tr><th>Agent</th><th>Cluster</th><th>Attendance store</th><th>Clock-in time</th><th>Status</th><th>Audit note</th></tr></thead><tbody>{todayRows.map(({record,...person})=><tr key={person.name}><td><strong>{person.name}</strong></td><td>{person.cluster}</td><td>{record?.store||'No clock-in'}</td><td><strong>{record?.clockIn?timeLabel(record.clockIn):'—'}</strong></td><td><span className={`attendance-status ${statusClass(record?.status||'Absent')}`}>{record?.status||'Absent'}</span></td><td>{record?.clockedInAfterCutoff?'Clocked in after cutoff':record?.clockIn?'Recorded successfully':'Missing clock-in'}</td></tr>)}</tbody></table></div></section>
     <section className="role-panel people-analytics"><div className="role-panel-head"><div><h2>Weekly attendance by agent</h2><p>Monday–Saturday. The current week uses elapsed workdays; six attended days equals 100% for a completed week.</p></div></div><div className="role-table-wrap"><table><thead><tr><th>Agent</th><th>Cluster</th><th>Role</th><th>MTD attendance</th><th>Weekly percentages</th><th>Late</th><th>Absent</th><th>Analysis</th></tr></thead><tbody>{analysis.rows.map((row)=><tr key={row.name}><td><strong>{row.name}</strong></td><td>{row.cluster}</td><td>{row.role}</td><td><AttendanceRate value={row.pct} note={`${row.present}/${row.expected} days`}/></td><td><div className="attendance-week-list">{row.weeks.map((week)=><span key={week.weekStart}><small>{dateLabel(week.weekStart)}</small><strong>{week.pct}%</strong><i>{week.present}/{week.expected}</i></span>)}</div></td><td>{row.late}</td><td>{row.absent}</td><td><button className="agent-name-link" onClick={()=>openDrilldown(row.name)}>Drill down →</button></td></tr>)}</tbody></table></div></section>
     {chosen&&<AgentDrilldown ref={drilldownRef} row={chosen} dates={analysis.dates} onClose={()=>setSelected('')}/>}
     <section className="role-panel people-analytics"><div className="role-panel-head"><div><h2>Daily clock-in log</h2><p>Exact Airtable dates and server timestamps displayed in Africa/Lagos time.</p></div><strong className="panel-stat">{analysis.logs.length} records</strong></div><div className="role-table-wrap"><table><thead><tr><th>Attendance date</th><th>Agent</th><th>Cluster</th><th>Store</th><th>Clock-in date and time</th><th>Status / audit result</th><th>Clock-out date and time</th><th>Distance</th><th>Accuracy</th></tr></thead><tbody>{analysis.logs.length?analysis.logs.map((row)=><tr key={row.id}><td><strong>{dateLabel(row.date)}</strong></td><td>{row.agentName}</td><td>{PEOPLE.find((person)=>person.name===row.agentName)?.cluster||'—'}</td><td>{row.store||'—'}</td><td><strong>{timestampLabel(row.clockIn)}</strong></td><td><span className={`attendance-status ${statusClass(row.status)}`}>{row.status}</span>{row.clockedInAfterCutoff&&<small className="log-note">Clocked in after cutoff</small>}</td><td>{row.clockOut?timestampLabel(row.clockOut):'—'}</td><td>{row.clockInDistance!=null?`${row.clockInDistance}m`:'—'}</td><td>{row.clockInAccuracy!=null?`±${row.clockInAccuracy}m`:'—'}</td></tr>):<tr><td colSpan="9" className="empty-detail">{loading?'Loading attendance…':'No attendance records match this period.'}</td></tr>}</tbody></table></div></section>
   </div>;
+}
+
+function DeviceApprovals({devices,reviewing,onReview}) {
+  const pending=devices.filter((device)=>device.status==='Pending').length;
+  return <section className="role-panel people-analytics device-approval-panel"><div className="role-panel-head"><div><h2>Attendance phone approvals</h2><p>One approved phone per account. Approving a replacement automatically revokes the agent’s previous phone.</p></div><strong className="panel-stat">{pending} pending</strong></div><div className="role-table-wrap"><table><thead><tr><th>Agent</th><th>Phone/browser</th><th>Platform</th><th>Requested</th><th>Last seen</th><th>Status</th><th>Review</th></tr></thead><tbody>{devices.length?devices.map((device)=><tr key={device.deviceId}><td><strong>{device.agentName||'Unknown'}</strong><small className="log-note">{device.agentUid}</small></td><td>{device.label}<small className="log-note">{device.screen} · {device.timeZone}</small></td><td>{device.platform||'—'}</td><td>{device.requestedAt?timestampLabel(device.requestedAt):'—'}</td><td>{device.lastSeenAt?timestampLabel(device.lastSeenAt):'—'}</td><td><span className={`device-status ${String(device.status).toLowerCase()}`}>{device.status}</span></td><td><div className="device-review-actions">{device.status!=='Approved'&&<button disabled={reviewing===device.deviceId} onClick={()=>onReview(device.deviceId,'Approved')}>Approve</button>}{device.status==='Pending'&&<button className="reject" disabled={reviewing===device.deviceId} onClick={()=>onReview(device.deviceId,'Rejected')}>Reject</button>}{device.status==='Approved'&&<button className="reject" disabled={reviewing===device.deviceId} onClick={()=>onReview(device.deviceId,'Revoked')}>Revoke</button>}</div></td></tr>):<tr><td colSpan="7" className="empty-detail">No phones have been registered yet.</td></tr>}</tbody></table></div></section>;
 }
 
 function Metric({label,value,note}){return <div className="executive-metric"><span>{label}</span><strong>{value}</strong><small>{note}</small></div>;}

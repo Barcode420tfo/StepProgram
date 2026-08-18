@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getAttendanceLocation } from '../../config/attendanceLocations';
 import { auth } from '../../lib/firebase';
+import { getAttendanceDevice } from '../../utils/deviceIdentity';
 
 function captureLocation() {
   return new Promise((resolve, reject) => {
@@ -24,11 +25,15 @@ async function attendanceRequest(action, coordinates, exceptionReason = '') {
   const currentUser = auth.currentUser;
   if (!currentUser) throw new Error('Your login session is unavailable. Sign in again and retry.');
   const token = await currentUser.getIdToken();
+  const device = getAttendanceDevice();
   const response = await fetch('/.netlify/functions/attendance', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({
       action,
+      deviceId: device.deviceId,
+      deviceSecret: device.deviceSecret,
+      deviceInfo: device.deviceInfo,
       ...(coordinates ? {
         latitude: coordinates.latitude,
         longitude: coordinates.longitude,
@@ -60,14 +65,15 @@ export default function GrowthPartnerAttendance({ name, roleLabel = 'Growth Part
   const [notice, setNotice] = useState('');
   const [serverOffset, setServerOffset] = useState(0);
   const [clock, setClock] = useState(Date.now());
+  const [deviceStatus, setDeviceStatus] = useState('Checking');
 
   useEffect(() => {
     let active = true;
     if (!configured) { setLoading(false); return () => { active = false; }; }
     setLoading(true);
     attendanceRequest('status')
-      .then((data) => { if (active) { setRecord(data.attendance); if(data.serverTime)setServerOffset(new Date(data.serverTime).getTime()-Date.now()); } })
-      .catch((requestError) => { if (active) setError(requestError.message); })
+      .then((data) => { if (active) { setRecord(data.attendance); setDeviceStatus(data.device?.status||'Unregistered'); if(data.serverTime)setServerOffset(new Date(data.serverTime).getTime()-Date.now()); } })
+      .catch((requestError) => { if (active) { setDeviceStatus(requestError.details?.device?.status||'Unavailable'); setError(requestError.message); } })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [configured, name]);
@@ -82,6 +88,19 @@ export default function GrowthPartnerAttendance({ name, roleLabel = 'Growth Part
   const serverNow = clock + serverOffset;
   const clockOutReady = Boolean(clockOutAvailableAt && serverNow >= clockOutAvailableAt.getTime());
   const clockOutLabel = clockOutAvailableAt ? clockOutAvailableAt.toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Lagos' }) : '';
+  const deviceApproved = deviceStatus === 'Approved';
+
+  const registerPhone = async () => {
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const result=await attendanceRequest('register_device');
+      setDeviceStatus(result.device?.status||'Pending');
+      setNotice(result.device?.status==='Approved'?'This phone is approved for attendance.':'Phone registration submitted. Wait for Super Admin approval before clocking in.');
+    } catch(requestError) {
+      setDeviceStatus(requestError.details?.device?.status||'Unavailable');
+      setError(requestError.message||'Could not register this phone.');
+    } finally { setBusy(false); }
+  };
 
   const act = async (action) => {
     setBusy(true); setError(''); setNotice('');
@@ -97,6 +116,7 @@ export default function GrowthPartnerAttendance({ name, roleLabel = 'Growth Part
         result = await attendanceRequest(action, gps, reason.trim());
       }
       setRecord(result.attendance);
+      if(result.device?.status)setDeviceStatus(result.device.status);
       if(result.serverTime)setServerOffset(new Date(result.serverTime).getTime()-Date.now());
       setClock(Date.now());
       setNotice(action === 'clock_in' ? `Clock-in saved and verified at ${timeLabel(result.serverTime)}.` : `Clock-out saved and verified at ${timeLabel(result.serverTime)}.`);
@@ -107,8 +127,8 @@ export default function GrowthPartnerAttendance({ name, roleLabel = 'Growth Part
   };
 
   return <section className="mock-attendance-control">
-    <div className="mock-attendance-head"><div><span className="mock-data-badge">{roleLabel} attendance</span><strong>{location?.storeName || 'Attendance store not registered'}</strong><small>{configured ? `${location.radius}m geofence · GPS accuracy limit 100m · closes 5:30 PM · Thursday starts 10:30 AM · server verified` : 'Store coordinates pending Admin registration'}</small></div><span className={`mock-shift-state ${record?.clockOut ? 'complete' : record?.clockIn ? 'clocked-in' : ''}`}>{!configured ? 'Setup pending' : loading ? 'Checking…' : record?.clockOut ? 'Shift completed' : record?.clockIn ? 'Clocked in' : 'Not clocked in'}</span></div>
-    <div className="mock-attendance-body"><div><small>Clock in</small><strong>{timeLabel(record?.clockIn)}</strong><span>{record?.clockInDistance != null ? `${record.clockInDistance}m from store` : 'Location not captured'}</span></div><div><small>Attendance status</small><strong>{record?.status || 'Pending'}</strong><span>{record?.insideClockIn === false ? 'Outside geofence' : record?.insideClockIn ? 'Inside geofence' : 'Awaiting clock-in'}</span></div><div><small>Clock out</small><strong>{timeLabel(record?.clockOut)}</strong><span>{record?.clockOutDistance != null ? `${record.clockOutDistance}m from store` : record?.clockIn&&!clockOutReady ? `Available at ${clockOutLabel}` : 'Not captured'}</span></div><div className="mock-attendance-actions">{!loading && !record?.clockIn ? <button className="mock-clock-in" disabled={!configured || busy} onClick={() => act('clock_in')}>{busy ? 'Checking GPS…' : 'Clock In'}</button> : !record?.clockOut && clockOutReady ? <button className="mock-clock-out" disabled={!configured || busy || loading} onClick={() => act('clock_out')}>{busy ? 'Checking GPS…' : 'Clock Out'}</button> : null}</div></div>
+    <div className="mock-attendance-head"><div><span className="mock-data-badge">{roleLabel} attendance</span><strong>{location?.storeName || 'Attendance store not registered'}</strong><small>{configured ? `${location.radius}m geofence · GPS accuracy limit 100m · closes 5:30 PM · Thursday starts 10:30 AM · phone ${deviceStatus.toLowerCase()} · server verified` : 'Store coordinates pending Admin registration'}</small></div><span className={`mock-shift-state ${record?.clockOut ? 'complete' : record?.clockIn ? 'clocked-in' : ''}`}>{!configured ? 'Setup pending' : loading ? 'Checking…' : !deviceApproved ? `Phone ${deviceStatus}` : record?.clockOut ? 'Shift completed' : record?.clockIn ? 'Clocked in' : 'Not clocked in'}</span></div>
+    <div className="mock-attendance-body"><div><small>Clock in</small><strong>{timeLabel(record?.clockIn)}</strong><span>{record?.clockInDistance != null ? `${record.clockInDistance}m from store` : 'Location not captured'}</span></div><div><small>Attendance status</small><strong>{record?.status || 'Pending'}</strong><span>{record?.insideClockIn === false ? 'Outside geofence' : record?.insideClockIn ? 'Inside geofence' : 'Awaiting clock-in'}</span></div><div><small>Clock out</small><strong>{timeLabel(record?.clockOut)}</strong><span>{record?.clockOutDistance != null ? `${record.clockOutDistance}m from store` : record?.clockIn&&!clockOutReady ? `Available at ${clockOutLabel}` : 'Not captured'}</span></div><div className="mock-attendance-actions">{!loading&&!deviceApproved&&['Unregistered','Rejected','Revoked'].includes(deviceStatus)?<button className="mock-register-device" disabled={busy} onClick={registerPhone}>{busy?'Registering…':'Register This Phone'}</button>:deviceApproved&&!loading&&!record?.clockIn?<button className="mock-clock-in" disabled={!configured||busy} onClick={()=>act('clock_in')}>{busy?'Checking GPS…':'Clock In'}</button>:deviceApproved&&!record?.clockOut&&clockOutReady?<button className="mock-clock-out" disabled={!configured||busy||loading} onClick={()=>act('clock_out')}>{busy?'Checking GPS…':'Clock Out'}</button>:null}</div></div>
     {notice && <div className="mock-attendance-note">{notice}</div>}{error && <div className="mock-attendance-note">{error}</div>}
   </section>;
 }

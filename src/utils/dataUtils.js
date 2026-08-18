@@ -37,6 +37,12 @@ export const getAuthErrorMessage = (code) => {
     'auth/invalid-credential': 'Invalid email or password.',
     'auth/too-many-requests': 'Too many failed attempts. Please try again later.',
     'auth/network-request-failed': 'Network error. Please check your connection.',
+    'auth/invalid-api-key': 'Firebase API key is missing or invalid. Check the VITE_FIREBASE_API_KEY environment variable and restart the app.',
+    'auth/api-key-not-valid.-please-pass-a-valid-api-key.': 'Firebase API key is invalid. Copy the Web App apiKey from Firebase Project Settings.',
+    'auth/operation-not-allowed': 'Email/password sign-in is not enabled for this Firebase project.',
+    'auth/unauthorized-domain': 'This website domain is not authorized in Firebase Authentication settings.',
+    'auth/configuration-not-found': 'Firebase Authentication is not configured for this project.',
+    'auth/internal-error': 'Firebase could not process the sign-in request. Verify the project configuration and try again.',
   };
   return messages[code] || 'An error occurred. Please try again.';
 };

@@ -1,6 +1,9 @@
+import { createHash } from 'node:crypto';
+
 const API_KEY = process.env.AIRTABLE_API_KEY;
 const BASE_ID = process.env.AIRTABLE_BASE_ID;
 const TABLE = process.env.AIRTABLE_ATTENDANCE_TABLE_NAME || 'Attendance';
+const DEVICE_TABLE = process.env.AIRTABLE_DEVICE_TABLE_NAME || 'Attendance Devices';
 const FIREBASE_API_KEY = process.env.VITE_FIREBASE_API_KEY || process.env.FIREBASE_WEB_API_KEY;
 const TIME_ZONE = 'Africa/Lagos';
 const CLOCK_OUT_OPEN_HOUR = 14;
@@ -82,14 +85,6 @@ const USERS = Object.freeze({
     longitude: 3.33870,
     radius: 100,
   },
-  cZXX5LSTcxdtfUIuM0QMfjoRHpH3: {
-    name: 'Mohammed',
-    email: 'bolasanusi@sapphirevirtual.com',
-    storeName: 'Segzy Ventures',
-    latitude: 6.51966,
-    longitude: 3.38231,
-    radius: 100,
-  },
   D5SAcx8YS9PpfQQ3p0NsWwBK2Ar1: {
     name: 'Peace',
     email: 'ejiogu.peace@sapphirevirtual.com',
@@ -104,7 +99,10 @@ function json(statusCode, body) {
   return { statusCode, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, body: JSON.stringify(body) };
 }
 function airtableUrl(id = '') { return `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(TABLE)}${id ? `/${id}` : ''}`; }
+function deviceTableUrl(id = '') { return `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(DEVICE_TABLE)}${id ? `/${id}` : ''}`; }
 function airtableHeaders() { return { Authorization: `Bearer ${API_KEY}`, 'Content-Type': 'application/json' }; }
+function formulaValue(value) { return String(value || '').replaceAll('\\', '\\\\').replaceAll("'", "\\'"); }
+function deviceSecretHash(secret) { return createHash('sha256').update(String(secret || '')).digest('hex'); }
 function parts(date) { return Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: TIME_ZONE, weekday: 'short', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(date).filter((p) => p.type !== 'literal').map((p) => [p.type, p.value])); }
 function localDate(date) { const p=parts(date); return `${p.year}-${p.month}-${p.day}`; }
 function localTimeOnDate(date, hour, minute = 0) {
@@ -128,6 +126,77 @@ function hasClockOutEvidence(fields = {}) {
     && fields['Clock Out Longitude'] != null
     && fields['Clock Out Distance'] != null
     && fields['Working Minutes'] != null;
+}
+
+function outputDevice(record) {
+  if (!record) return { status: 'Unregistered' };
+  const fields=record.fields||{};
+  return {
+    recordId:record.id,
+    deviceId:fields['Device ID']||'',
+    agentUid:fields['Agent UID']||'',
+    agentName:fields['Agent Name']||'',
+    label:fields['Device Label']||'Unknown phone',
+    browser:fields['Browser']||'',
+    platform:fields['Platform']||'',
+    screen:fields['Screen']||'',
+    timeZone:fields['Time Zone']||'',
+    status:fields.Status||'Pending',
+    requestedAt:fields['Requested At']||null,
+    reviewedAt:fields['Reviewed At']||null,
+    reviewedBy:fields['Reviewed By']||'',
+    lastSeenAt:fields['Last Seen At']||null,
+  };
+}
+
+async function findDevice(deviceId) {
+  if(!deviceId) return null;
+  const formula=`{Device ID}='${formulaValue(deviceId)}'`;
+  const response=await fetch(`${deviceTableUrl()}?maxRecords=1&filterByFormula=${encodeURIComponent(formula)}`,{headers:airtableHeaders()});
+  const data=await response.json();
+  if(!response.ok) throw new Error(data.error?.message||`Could not read ${DEVICE_TABLE}.`);
+  return data.records?.[0]||null;
+}
+
+async function findAgentDevices(uid) {
+  const formula=`{Agent UID}='${formulaValue(uid)}'`;
+  const response=await fetch(`${deviceTableUrl()}?pageSize=100&filterByFormula=${encodeURIComponent(formula)}`,{headers:airtableHeaders()});
+  const data=await response.json();
+  if(!response.ok) throw new Error(data.error?.message||`Could not read ${DEVICE_TABLE}.`);
+  return data.records||[];
+}
+
+async function findAllDevices() {
+  const response=await fetch(`${deviceTableUrl()}?pageSize=100`,{headers:airtableHeaders()});
+  const data=await response.json();
+  if(!response.ok) throw new Error(data.error?.message||`Could not read ${DEVICE_TABLE}.`);
+  return (data.records||[]).sort((a,b)=>String(b.fields?.['Requested At']||'').localeCompare(String(a.fields?.['Requested At']||'')));
+}
+
+function validateDeviceInput(body) {
+  const deviceId=String(body.deviceId||'').trim();
+  const deviceSecret=String(body.deviceSecret||'').trim();
+  if(!/^[a-zA-Z0-9-]{16,100}$/.test(deviceId)||deviceSecret.length<32) {
+    throw Object.assign(new Error('This phone could not be identified. Reload the dashboard and try again.'),{status:400});
+  }
+  return {deviceId,deviceSecret};
+}
+
+async function verifyDevice(user,body,{approved=false}={}) {
+  const {deviceId,deviceSecret}=validateDeviceInput(body);
+  const record=await findDevice(deviceId);
+  if(!record) {
+    if(approved) throw Object.assign(new Error('This phone is not registered. Register it and wait for Super Admin approval.'),{status:403,device:{status:'Unregistered'}});
+    return null;
+  }
+  const fields=record.fields||{};
+  if(fields['Agent UID']!==user.uid||fields['Device Secret Hash']!==deviceSecretHash(deviceSecret)) {
+    throw Object.assign(new Error('This phone is registered to another account or its validation token is invalid.'),{status:403,device:{status:'Blocked'}});
+  }
+  if(approved&&fields.Status!=='Approved') {
+    throw Object.assign(new Error(fields.Status==='Pending'?'This phone is awaiting Super Admin approval.':'This phone is not approved for attendance.'),{status:403,device:outputDevice(record)});
+  }
+  return record;
 }
 
 async function authenticate(event) {
@@ -202,9 +271,67 @@ export async function handler(event) {
       const records=await findAllHistory();
       return json(200,{ok:true,attendance:records.map(output),serverTime:now.toISOString()});
     }
+    if(action==='all_devices') {
+      if(!user.canViewAllAttendance) return json(403,{error:'Super Admin device access is required.'});
+      const devices=await findAllDevices();
+      return json(200,{ok:true,devices:devices.map(outputDevice),serverTime:now.toISOString()});
+    }
+    if(action==='review_device') {
+      if(!user.canViewAllAttendance) return json(403,{error:'Super Admin device access is required.'});
+      const deviceId=String(body.deviceId||'').trim();
+      const nextStatus=String(body.status||'').trim();
+      if(!deviceId||!['Approved','Rejected','Revoked'].includes(nextStatus)) return json(400,{error:'A valid device and review decision are required.'});
+      const device=await findDevice(deviceId);
+      if(!device) return json(404,{error:'Device request was not found.'});
+      if(nextStatus==='Approved') {
+        const otherDevices=await findAgentDevices(device.fields?.['Agent UID']);
+        for(const other of otherDevices) {
+          if(other.id!==device.id&&other.fields?.Status==='Approved') {
+            const revoke=await fetch(deviceTableUrl(other.id),{method:'PATCH',headers:airtableHeaders(),body:JSON.stringify({fields:{Status:'Revoked','Reviewed At':now.toISOString(),'Reviewed By':user.name},typecast:true})});
+            if(!revoke.ok) throw new Error('Could not revoke the agent’s previously approved phone.');
+          }
+        }
+      }
+      const response=await fetch(deviceTableUrl(device.id),{method:'PATCH',headers:airtableHeaders(),body:JSON.stringify({fields:{Status:nextStatus,'Reviewed At':now.toISOString(),'Reviewed By':user.name},typecast:true})});
+      const data=await response.json();
+      if(!response.ok) throw new Error(data.error?.message||'Could not review this phone.');
+      return json(200,{ok:true,device:outputDevice(data),serverTime:now.toISOString()});
+    }
+    if(action==='device_status') {
+      const device=await verifyDevice(user,body);
+      return json(200,{ok:true,device:outputDevice(device),serverTime:now.toISOString()});
+    }
+    if(action==='register_device') {
+      const existingDevice=await verifyDevice(user,body);
+      if(existingDevice) return json(200,{ok:true,device:outputDevice(existingDevice),serverTime:now.toISOString()});
+      const {deviceId,deviceSecret}=validateDeviceInput(body);
+      const info=body.deviceInfo||{};
+      const fields={
+        'Device ID':deviceId,
+        'Agent UID':user.uid,
+        'Agent Name':user.name,
+        'Device Secret Hash':deviceSecretHash(deviceSecret),
+        'Device Label':String(info.label||'Mobile browser').slice(0,120),
+        Browser:String(info.browser||'').slice(0,1000),
+        Platform:String(info.platform||'').slice(0,120),
+        Screen:String(info.screen||'').slice(0,40),
+        'Time Zone':String(info.timeZone||'').slice(0,80),
+        Status:'Pending',
+        'Requested At':now.toISOString(),
+        'Last Seen At':now.toISOString(),
+      };
+      const response=await fetch(deviceTableUrl(),{method:'POST',headers:airtableHeaders(),body:JSON.stringify({fields,typecast:true})});
+      const data=await response.json();
+      if(!response.ok) throw new Error(data.error?.message||'Could not register this phone.');
+      return json(200,{ok:true,device:outputDevice(data),serverTime:now.toISOString()});
+    }
     if(!Number.isFinite(user.latitude)||!Number.isFinite(user.longitude)||!Number.isFinite(user.radius)) return json(403,{error:'This account does not have a personal attendance location.'});
     const existing=await findToday(user.uid,date);
-    if(action==='status') return json(200,{ok:true,attendance:output(existing),serverTime:now.toISOString()});
+    if(action==='status') {
+      const device=await verifyDevice(user,body);
+      return json(200,{ok:true,attendance:output(existing),device:outputDevice(device),serverTime:now.toISOString()});
+    }
+    const approvedDevice=await verifyDevice(user,body,{approved:true});
     const latitude=Number(body.latitude); const longitude=Number(body.longitude); const accuracy=Number(body.accuracy);
     if(!Number.isFinite(latitude)||!Number.isFinite(longitude)||!Number.isFinite(accuracy)) return json(400,{error:'Valid GPS coordinates and accuracy are required.'});
     if(accuracy>100) return json(422,{error:`GPS accuracy is ±${Math.round(accuracy)}m. It must be 100m or better.`});
@@ -213,7 +340,9 @@ export async function handler(event) {
       if(existing?.fields?.['Clock In Time']) return json(409,{error:'You have already clocked in today.',attendance:output(existing)});
       if(!inside) return json(422,{error:`Clock-in rejected. You are ${metres}m from ${user.storeName}; you must be within ${user.radius}m.`});
       const fields={'Agent UID':user.uid,'Agent Name':user.name,'Attendance Date':date,'Attendance Store':user.storeName,'Clock In Time':now.toISOString(),'Clock In Latitude':latitude,'Clock in Longitude':longitude,'Clock In Accuracy':Math.round(accuracy),'Clock In Distance':metres,'Attendance Status':attendanceStatus(now),'Created At':now.toISOString(),'Updated At':now.toISOString()};
-      const response=await fetch(airtableUrl(),{method:'POST',headers:airtableHeaders(),body:JSON.stringify({fields,typecast:true})}); const data=await response.json(); if(!response.ok) throw new Error(data.error?.message||'Could not save clock-in.'); return json(200,{ok:true,attendance:output(data),serverTime:now.toISOString()});
+      const response=await fetch(airtableUrl(),{method:'POST',headers:airtableHeaders(),body:JSON.stringify({fields,typecast:true})}); const data=await response.json(); if(!response.ok) throw new Error(data.error?.message||'Could not save clock-in.');
+      await fetch(deviceTableUrl(approvedDevice.id),{method:'PATCH',headers:airtableHeaders(),body:JSON.stringify({fields:{'Last Seen At':now.toISOString()},typecast:true})});
+      return json(200,{ok:true,attendance:output(data),device:outputDevice(approvedDevice),serverTime:now.toISOString()});
     }
     if(action==='clock_out') {
       if(!existing?.fields?.['Clock In Time']) return json(409,{error:'No active clock-in was found for today.'});
@@ -222,8 +351,10 @@ export async function handler(event) {
       if(now<earliestClockOut) return json(422,{error:'Clock-out becomes available at 2:00 PM.',clockOutAvailableAt:earliestClockOut.toISOString(),attendance:output(existing)});
       if(!inside&&!String(body.exceptionReason||'').trim()) return json(422,{error:'Clock-out outside the 100m geofence requires an exception reason.',requiresReason:true,distance:metres});
       const started=new Date(existing.fields['Clock In Time']); const workingMinutes=Math.max(0,Math.round((now-started)/60000)); const fields={'Clock Out Time':now.toISOString(),'Clock Out Latitude':latitude,'Clock Out Longitude':longitude,'Clock Out Accuracy':Math.round(accuracy),'Clock Out Distance':metres,'Working Minutes':workingMinutes,'Exception Reason':String(body.exceptionReason||''),'Updated At':now.toISOString()};
-      const response=await fetch(airtableUrl(existing.id),{method:'PATCH',headers:airtableHeaders(),body:JSON.stringify({fields,typecast:true})}); const data=await response.json(); if(!response.ok) throw new Error(data.error?.message||'Could not save clock-out.'); return json(200,{ok:true,attendance:output(data),serverTime:now.toISOString()});
+      const response=await fetch(airtableUrl(existing.id),{method:'PATCH',headers:airtableHeaders(),body:JSON.stringify({fields,typecast:true})}); const data=await response.json(); if(!response.ok) throw new Error(data.error?.message||'Could not save clock-out.');
+      await fetch(deviceTableUrl(approvedDevice.id),{method:'PATCH',headers:airtableHeaders(),body:JSON.stringify({fields:{'Last Seen At':now.toISOString()},typecast:true})});
+      return json(200,{ok:true,attendance:output(data),device:outputDevice(approvedDevice),serverTime:now.toISOString()});
     }
     return json(400,{error:'Unknown attendance action.'});
-  } catch(error) { return json(error.status||502,{error:error.message||'Attendance request failed.'}); }
+  } catch(error) { return json(error.status||502,{error:error.message||'Attendance request failed.',...(error.device?{device:error.device}:{})}); }
 }
