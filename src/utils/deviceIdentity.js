@@ -37,3 +37,9 @@ export function getAttendanceDevice() {
     },
   };
 }
+
+export function resetAttendanceDevice() {
+  const identity = createIdentity();
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(identity));
+  return identity;
+}

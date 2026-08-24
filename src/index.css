@@ -7,6 +7,8 @@
   --text:#202124;--muted:#5f6368;
 }
 
+.mock-attendance-actions{display:flex;flex-direction:column;gap:6px}
+
 /* Cluster analytics controls */
 .analytics-controls select{border:1px solid var(--border);border-radius:5px;padding:6px 7px;font:10px inherit;color:var(--text);background:#fff}
 @media(max-width:768px){.analytics-controls select{width:100%}}
