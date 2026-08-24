@@ -308,6 +308,10 @@ export async function handler(event) {
     if(action==='register_device') {
       const existingDevice=await verifyDevice(user,body);
       if(existingDevice) return json(200,{ok:true,device:outputDevice(existingDevice),serverTime:now.toISOString()});
+      const approvedDevice=(await findAgentDevices(user.uid)).find((record)=>record.fields?.Status==='Approved');
+      if(approvedDevice) {
+        return json(409,{error:'This account already has an approved attendance phone. Use the approved phone or ask an Admin to revoke it first.',device:{status:'Locked'}});
+      }
       const {deviceId,deviceSecret}=validateDeviceInput(body);
       const info=body.deviceInfo||{};
       const fields={
