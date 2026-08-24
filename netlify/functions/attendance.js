@@ -26,6 +26,10 @@ const USERS = Object.freeze({
     email: 'hayjayponping@gmail.com',
     canViewAllAttendance: true,
   },
+  olwaDrpf6tbRMq5BHYSlnDlUo0r1: {
+    name: 'Chris',
+    email: 'okoegualechristopher4@gmail.com',
+  },
   ZJviPrASfzPg95CauDo3ORGlVSt1: {
     name: 'Towobola',
     email: 'towobolaadefowokan@gmail.com',

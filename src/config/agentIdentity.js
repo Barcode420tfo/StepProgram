@@ -5,6 +5,7 @@ const AGENTS = [
   { id: 'gp-mohammed', name: 'Mohammed', aliases: ['mohammed', 'mohamed', 'muhammed'] },
   { id: 'gp-esther', name: 'Esther', aliases: ['esther'] },
   { id: 'gp-sarah', name: 'Sarah', aliases: ['sarah'] },
+  { id: 'gp-chris', name: 'Chris', aliases: ['chris', 'christopher', 'christopher okoeguale', 'okoeguale christopher'] },
   { id: 'sup-babatunde', name: 'Babatunde', aliases: ['babatunde'] },
   { id: 'sa-peace', name: 'Peace', aliases: ['peace'] },
   { id: 'sa-queen', name: 'Queen', aliases: ['queen'] },

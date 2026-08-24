@@ -44,7 +44,7 @@ const PAGES = [
 export default function Nav({ activePage, onPageChange, badges = {} }) {
   const { signOut, user, role, profile, previewRole, setPreviewRole, canPreviewRoles } = useAuth();
   const { refresh, isRefreshing } = useData();
-  const isRestrictedGrowthPartner = role === ROLES.GROWTH_PARTNER && ['Mohammed', 'Sarah', 'Esther'].includes(profile?.portfolio?.name);
+  const isRestrictedGrowthPartner = role === ROLES.GROWTH_PARTNER && ['Mohammed', 'Sarah', 'Esther', 'Chris'].includes(profile?.portfolio?.name);
   const visiblePages = PAGES.filter((page) => page.roles.includes(role) && (page.id !== 'attendance' || isSuperAdmin(user?.uid)) && (!isRestrictedGrowthPartner || page.id === 'workspace') && (page.id !== 'workspace' || role !== ROLES.ADMIN || profile.canViewExecutiveWorkspace || import.meta.env.DEV));
 
   return (

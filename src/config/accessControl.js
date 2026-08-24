@@ -97,6 +97,11 @@ export const BOOTSTRAP_USERS = Object.freeze({
     role: ROLES.GROWTH_PARTNER,
     profileName: 'Jessica',
   }),
+  olwaDrpf6tbRMq5BHYSlnDlUo0r1: Object.freeze({
+    email: 'okoegualechristopher4@gmail.com',
+    role: ROLES.GROWTH_PARTNER,
+    profileName: 'Chris',
+  }),
   S5TDJR6FXvQKYoNJrY3lQChWLyC2: Object.freeze({
     email: 'ogbonnaifeoma@sapphirevirtual.com',
     role: ROLES.SALES_AGENT,
@@ -144,6 +149,7 @@ export const SUPERVISOR_PORTFOLIOS = Object.freeze([
   { name: 'Mohammed', territory: 'UNILAG / Akoka', agent: null, stores: 30 },
   { name: 'Sarah', territory: 'Sango', agent: null, stores: 29 },
   { name: 'Esther', territory: 'Ikorodu', agent: null, stores: 22 },
+  { name: 'Chris', territory: 'Abuja', agent: null, stores: 1 },
 ]);
 
 export const CLUSTER_SUPERVISOR_PORTFOLIOS = Object.freeze([
