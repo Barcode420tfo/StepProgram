@@ -6,6 +6,7 @@ const TABLE = process.env.AIRTABLE_ATTENDANCE_TABLE_NAME || 'Attendance';
 const DEVICE_TABLE = process.env.AIRTABLE_DEVICE_TABLE_NAME || 'Attendance Devices';
 const FIREBASE_API_KEY = process.env.VITE_FIREBASE_API_KEY || process.env.FIREBASE_WEB_API_KEY;
 const TIME_ZONE = 'Africa/Lagos';
+const CLOCK_IN_CLOSE_HOUR = 11;
 const CLOCK_OUT_OPEN_HOUR = 14;
 const CLOSING_HOUR = 17;
 const CLOSING_MINUTE = 30;
@@ -346,6 +347,7 @@ export async function handler(event) {
     const metres=distance(latitude,longitude,user.latitude,user.longitude); const inside=metres<=user.radius;
     if(action==='clock_in') {
       if(existing?.fields?.['Clock In Time']) return json(409,{error:'You have already clocked in today.',attendance:output(existing)});
+      if(now>=localTimeOnDate(now,CLOCK_IN_CLOSE_HOUR)) return json(422,{error:'Clock-in closed at 11:00 AM today.'});
       if(!inside) return json(422,{error:`Clock-in rejected. You are ${metres}m from ${user.storeName}; you must be within ${user.radius}m.`});
       const fields={'Agent UID':user.uid,'Agent Name':user.name,'Attendance Date':date,'Attendance Store':user.storeName,'Clock In Time':now.toISOString(),'Clock In Latitude':latitude,'Clock in Longitude':longitude,'Clock In Accuracy':Math.round(accuracy),'Clock In Distance':metres,'Attendance Status':attendanceStatus(now),'Created At':now.toISOString(),'Updated At':now.toISOString()};
       const response=await fetch(airtableUrl(),{method:'POST',headers:airtableHeaders(),body:JSON.stringify({fields,typecast:true})}); const data=await response.json(); if(!response.ok) throw new Error(data.error?.message||'Could not save clock-in.');
