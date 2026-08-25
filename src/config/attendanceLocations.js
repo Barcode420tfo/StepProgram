@@ -5,6 +5,7 @@ export const GROWTH_PARTNER_ATTENDANCE = Object.freeze({
   Mohammed: { storeName: 'Segzy Ventures', latitude: 6.51966, longitude: 3.38231, radius: 100 },
   Esther: { storeName: 'Sky Communication', latitude: 6.63194, longitude: 3.53490, radius: 100 },
   Sarah: { storeName: 'FM Reliable', latitude: 6.67311, longitude: 3.29077, radius: 100 },
+  Chris: { storeName: 'Zee Gadgets', latitude: 9.08406, longitude: 7.46811, radius: 100 },
 });
 
 export const SALES_AGENT_ATTENDANCE = Object.freeze({

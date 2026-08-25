@@ -30,6 +30,10 @@ const USERS = Object.freeze({
   olwaDrpf6tbRMq5BHYSlnDlUo0r1: {
     name: 'Chris',
     email: 'okoegualechristopher4@gmail.com',
+    storeName: 'Zee Gadgets',
+    latitude: 9.08406,
+    longitude: 7.46811,
+    radius: 100,
   },
   ZJviPrASfzPg95CauDo3ORGlVSt1: {
     name: 'Towobola',
@@ -132,6 +136,8 @@ function hasClockOutEvidence(fields = {}) {
     && fields['Clock Out Distance'] != null
     && fields['Working Minutes'] != null;
 }
+
+export { attendanceStatus, distance, hasClockOutEvidence, localDate, localTimeOnDate, parts };
 
 function outputDevice(record) {
   if (!record) return { status: 'Unregistered' };

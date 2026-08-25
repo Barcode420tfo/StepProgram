@@ -4,6 +4,9 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "functions": {
+    "api/attendance.js": {
+      "maxDuration": 60
+    },
     "api/export-reports.js": {
       "maxDuration": 60
     }
