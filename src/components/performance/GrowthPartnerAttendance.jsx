@@ -71,13 +71,14 @@ export default function GrowthPartnerAttendance({ name, roleLabel = 'Growth Part
   const [serverOffset, setServerOffset] = useState(0);
   const [clock, setClock] = useState(Date.now());
   const [deviceStatus, setDeviceStatus] = useState('Checking');
+  const [phoneApprovalRequired, setPhoneApprovalRequired] = useState(true);
 
   useEffect(() => {
     let active = true;
     if (!configured) { setLoading(false); return () => { active = false; }; }
     setLoading(true);
     attendanceRequest('status')
-      .then((data) => { if (active) { setRecord(data.attendance); setDeviceStatus(data.device?.status||'Unregistered'); if(data.serverTime)setServerOffset(new Date(data.serverTime).getTime()-Date.now()); } })
+      .then((data) => { if (active) { setRecord(data.attendance); setDeviceStatus(data.device?.status||'Unregistered'); setPhoneApprovalRequired(data.device?.approvalRequired!==false); if(data.serverTime)setServerOffset(new Date(data.serverTime).getTime()-Date.now()); } })
       .catch((requestError) => { if (active) { setDeviceStatus(requestError.details?.device?.status||'Unavailable'); setError(requestError.message); } })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
@@ -160,7 +161,7 @@ export default function GrowthPartnerAttendance({ name, roleLabel = 'Growth Part
   };
 
   return <section className="mock-attendance-control">
-    <div className="mock-attendance-head"><div><span className="mock-data-badge">{roleLabel} attendance</span><strong>{location?.storeName || 'Attendance store not registered'}</strong><small>{configured ? `${location.radius}m geofence · clock-in closes 11:00 AM · clock-out opens 2:00 PM · GPS accuracy limit 100m · phone ${deviceStatus.toLowerCase()} · server verified` : 'Store coordinates pending Admin registration'}</small></div><span className={`mock-shift-state ${record?.clockOut ? 'complete' : record?.clockIn ? 'clocked-in' : ''}`}>{!configured ? 'Setup pending' : loading ? 'Checking…' : !deviceApproved ? `Phone ${deviceStatus}` : record?.clockOut ? 'Shift completed' : record?.clockIn ? 'Clocked in' : !clockInOpen ? 'Clock-in closed' : 'Not clocked in'}</span></div>
+    <div className="mock-attendance-head"><div><span className="mock-data-badge">{roleLabel} attendance</span><strong>{location?.storeName || 'Attendance store not registered'}</strong><small>{configured ? `${location.radius}m geofence · clock-in closes 11:00 AM · clock-out opens 2:00 PM · GPS accuracy limit 100m · ${phoneApprovalRequired ? `phone ${deviceStatus.toLowerCase()}` : 'phone approval temporarily disabled'} · server verified` : 'Store coordinates pending Admin registration'}</small></div><span className={`mock-shift-state ${record?.clockOut ? 'complete' : record?.clockIn ? 'clocked-in' : ''}`}>{!configured ? 'Setup pending' : loading ? 'Checking…' : !deviceApproved ? `Phone ${deviceStatus}` : record?.clockOut ? 'Shift completed' : record?.clockIn ? 'Clocked in' : !clockInOpen ? 'Clock-in closed' : 'Not clocked in'}</span></div>
     <div className="mock-attendance-body"><div><small>Clock in</small><strong>{timeLabel(record?.clockIn)}</strong><span>{record?.clockInDistance != null ? `${record.clockInDistance}m from store` : !record?.clockIn&&!clockInOpen ? 'Closed at 11:00 AM' : 'Location not captured'}</span></div><div><small>Attendance status</small><strong>{record?.status || 'Pending'}</strong><span>{record?.insideClockIn === false ? 'Outside geofence' : record?.insideClockIn ? 'Inside geofence' : 'Awaiting clock-in'}</span></div><div><small>Clock out</small><strong>{timeLabel(record?.clockOut)}</strong><span>{record?.clockOutDistance != null ? `${record.clockOutDistance}m from store` : record?.clockIn&&!clockOutReady ? `Available at ${clockOutLabel}` : 'Not captured'}</span></div><div className="mock-attendance-actions">{!loading&&!deviceApproved&&['Unregistered','Rejected','Revoked'].includes(deviceStatus)?<button className="mock-register-device" disabled={busy} onClick={registerPhone}>{busy?'Registering…':'Register This Phone'}</button>:deviceApproved&&!loading&&!record?.clockIn&&clockInOpen?<button className="mock-clock-in" disabled={!configured||busy} onClick={()=>act('clock_in')}>{busy?'Checking GPS…':'Clock In'}</button>:deviceApproved&&!record?.clockOut&&clockOutReady?<button className="mock-clock-out" disabled={!configured||busy||loading} onClick={()=>act('clock_out')}>{busy?'Checking GPS…':'Clock Out'}</button>:null}{!loading&&!deviceApproved&&canResetDevice&&<button className="mock-reset" disabled={busy} onClick={resetPhone}>Reset Phone Registration</button>}</div></div>
     {notice && <div className="mock-attendance-note">{notice}</div>}{error && <div className="mock-attendance-note">{error}</div>}
   </section>;

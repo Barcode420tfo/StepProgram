@@ -10,6 +10,9 @@ const CLOCK_IN_CLOSE_HOUR = 11;
 const CLOCK_OUT_OPEN_HOUR = 14;
 const CLOSING_HOUR = 17;
 const CLOSING_MINUTE = 30;
+// Temporary test mode: attendance still requires authentication, GPS and the
+// normal schedule, but it is not gated by attendance-device approval.
+const PHONE_APPROVAL_REQUIRED = false;
 
 const USERS = Object.freeze({
   vJMImsYZeWThRPQmERfnFct0FVL2: {
@@ -309,10 +312,12 @@ export async function handler(event) {
       return json(200,{ok:true,device:outputDevice(data),serverTime:now.toISOString()});
     }
     if(action==='device_status') {
+      if(!PHONE_APPROVAL_REQUIRED) return json(200,{ok:true,device:{status:'Approved',approvalRequired:false},serverTime:now.toISOString()});
       const device=await verifyDevice(user,body);
       return json(200,{ok:true,device:outputDevice(device),serverTime:now.toISOString()});
     }
     if(action==='register_device') {
+      if(!PHONE_APPROVAL_REQUIRED) return json(200,{ok:true,device:{status:'Approved',approvalRequired:false},serverTime:now.toISOString()});
       const existingDevice=await verifyDevice(user,body);
       if(existingDevice) return json(200,{ok:true,device:outputDevice(existingDevice),serverTime:now.toISOString()});
       const approvedDevice=(await findAgentDevices(user.uid)).find((record)=>record.fields?.Status==='Approved');
@@ -343,10 +348,10 @@ export async function handler(event) {
     if(!Number.isFinite(user.latitude)||!Number.isFinite(user.longitude)||!Number.isFinite(user.radius)) return json(403,{error:'This account does not have a personal attendance location.'});
     const existing=await findToday(user.uid,date);
     if(action==='status') {
-      const device=await verifyDevice(user,body);
-      return json(200,{ok:true,attendance:output(existing),device:outputDevice(device),serverTime:now.toISOString()});
+      const device=PHONE_APPROVAL_REQUIRED ? outputDevice(await verifyDevice(user,body)) : {status:'Approved',approvalRequired:false};
+      return json(200,{ok:true,attendance:output(existing),device,serverTime:now.toISOString()});
     }
-    const approvedDevice=await verifyDevice(user,body,{approved:true});
+    const approvedDevice=PHONE_APPROVAL_REQUIRED ? await verifyDevice(user,body,{approved:true}) : null;
     const latitude=Number(body.latitude); const longitude=Number(body.longitude); const accuracy=Number(body.accuracy);
     if(!Number.isFinite(latitude)||!Number.isFinite(longitude)||!Number.isFinite(accuracy)) return json(400,{error:'Valid GPS coordinates and accuracy are required.'});
     if(accuracy>100) return json(422,{error:`GPS accuracy is ±${Math.round(accuracy)}m. It must be 100m or better.`});
@@ -357,8 +362,8 @@ export async function handler(event) {
       if(!inside) return json(422,{error:`Clock-in rejected. You are ${metres}m from ${user.storeName}; you must be within ${user.radius}m.`});
       const fields={'Agent UID':user.uid,'Agent Name':user.name,'Attendance Date':date,'Attendance Store':user.storeName,'Clock In Time':now.toISOString(),'Clock In Latitude':latitude,'Clock in Longitude':longitude,'Clock In Accuracy':Math.round(accuracy),'Clock In Distance':metres,'Attendance Status':attendanceStatus(now),'Created At':now.toISOString(),'Updated At':now.toISOString()};
       const response=await fetch(airtableUrl(),{method:'POST',headers:airtableHeaders(),body:JSON.stringify({fields,typecast:true})}); const data=await response.json(); if(!response.ok) throw new Error(data.error?.message||'Could not save clock-in.');
-      await fetch(deviceTableUrl(approvedDevice.id),{method:'PATCH',headers:airtableHeaders(),body:JSON.stringify({fields:{'Last Seen At':now.toISOString()},typecast:true})});
-      return json(200,{ok:true,attendance:output(data),device:outputDevice(approvedDevice),serverTime:now.toISOString()});
+      if(approvedDevice) await fetch(deviceTableUrl(approvedDevice.id),{method:'PATCH',headers:airtableHeaders(),body:JSON.stringify({fields:{'Last Seen At':now.toISOString()},typecast:true})});
+      return json(200,{ok:true,attendance:output(data),device:approvedDevice?outputDevice(approvedDevice):{status:'Approved',approvalRequired:false},serverTime:now.toISOString()});
     }
     if(action==='clock_out') {
       if(!existing?.fields?.['Clock In Time']) return json(409,{error:'No active clock-in was found for today.'});
@@ -368,8 +373,8 @@ export async function handler(event) {
       if(!inside&&!String(body.exceptionReason||'').trim()) return json(422,{error:'Clock-out outside the 100m geofence requires an exception reason.',requiresReason:true,distance:metres});
       const started=new Date(existing.fields['Clock In Time']); const workingMinutes=Math.max(0,Math.round((now-started)/60000)); const fields={'Clock Out Time':now.toISOString(),'Clock Out Latitude':latitude,'Clock Out Longitude':longitude,'Clock Out Accuracy':Math.round(accuracy),'Clock Out Distance':metres,'Working Minutes':workingMinutes,'Exception Reason':String(body.exceptionReason||''),'Updated At':now.toISOString()};
       const response=await fetch(airtableUrl(existing.id),{method:'PATCH',headers:airtableHeaders(),body:JSON.stringify({fields,typecast:true})}); const data=await response.json(); if(!response.ok) throw new Error(data.error?.message||'Could not save clock-out.');
-      await fetch(deviceTableUrl(approvedDevice.id),{method:'PATCH',headers:airtableHeaders(),body:JSON.stringify({fields:{'Last Seen At':now.toISOString()},typecast:true})});
-      return json(200,{ok:true,attendance:output(data),device:outputDevice(approvedDevice),serverTime:now.toISOString()});
+      if(approvedDevice) await fetch(deviceTableUrl(approvedDevice.id),{method:'PATCH',headers:airtableHeaders(),body:JSON.stringify({fields:{'Last Seen At':now.toISOString()},typecast:true})});
+      return json(200,{ok:true,attendance:output(data),device:approvedDevice?outputDevice(approvedDevice):{status:'Approved',approvalRequired:false},serverTime:now.toISOString()});
     }
     return json(400,{error:'Unknown attendance action.'});
   } catch(error) { return json(error.status||502,{error:error.message||'Attendance request failed.',...(error.device?{device:error.device}:{})}); }
